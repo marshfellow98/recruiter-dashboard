@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #000; min-height: 100vh; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; padding: 1.5rem; }
+
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 2rem; padding-bottom: 1.25rem; border-bottom: 1px solid #1a1a1a;
+  }
+  .brand { font-size: 14px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; }
+  .topbar-date { font-size: 14px; color: #777; margin-top: 4px; }
+  .stats-row { display: flex; gap: 32px; align-items: center; }
+  .stat { text-align: center; }
+  .stat-val { font-size: 42px; font-weight: 600; color: #fff; line-height: 1; }
+  .stat-label { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #666; margin-top: 6px; }
+  .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #00d084; box-shadow: 0 0 8px #00d084; }
+
+  .schedule-strip { display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 4px; }
+  .sched-item {
+    flex-shrink: 0; padding: 14px 20px; border-radius: 12px; cursor: pointer;
+    border: 1.5px solid #1a1a1a; background: #0a0a0a; min-width: 150px;
+    transition: all 0.2s;
+  }
+  .sched-item.active { background: #fff; border-color: #fff; }
+  .sched-item.done { opacity: 0.35; }
+  .sched-time { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: #555; margin-bottom: 6px; }
+  .sched-item.active .sched-time { color: #000; }
+  .sched-name { font-size: 15px; font-weight: 600; color: #fff; }
+  .sched-item.active .sched-name { color: #000; }
+  .sched-role { font-size: 11px; color: #444; margin-top: 3px; }
+  .sched-item.active .sched-role { color: #333; }
+  .now-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #00d084; margin-right: 5px; box-shadow: 0 0 6px #00d084; vertical-align: middle; }
+
+  .layout { display: grid; grid-template-columns: 1fr 280px; gap: 20px; }
+
+  .main-card { background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 20px; padding: 2rem; }
+  .cand-name { font-size: 52px; font-weight: 700; color: #fff; line-height: 1; letter-spacing: -0.02em; margin-bottom: 8px; }
+  .cand-title { font-size: 17px; color: #555; margin-bottom: 16px; }
+  .cand-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 2rem; }
+  .tag { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 5px 14px; border-radius: 20px; }
+  .tag-now { background: #00d084; color: #000; }
+  .tag-gray { background: #1a1a1a; color: #666; border: 1px solid #222; }
+
+  .contact-row { display: flex; gap: 10px; margin-bottom: 2rem; flex-wrap: wrap; }
+  .contact-btn {
+    display: flex; align-items: center; gap: 8px; padding: 14px 20px; border-radius: 12px;
+    font-size: 14px; font-weight: 500; color: #fff; background: #141414;
+    border: 1px solid #252525; cursor: pointer; text-decoration: none;
+    transition: all 0.15s; font-family: 'Inter', sans-serif;
+  }
+  .contact-btn:hover { background: #1e1e1e; }
+  .contact-btn.primary { background: #fff; color: #000; border-color: #fff; }
+  .contact-btn.primary:hover { background: #e8e8e8; }
+
+  .info-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 2rem; }
+  .info-cell { background: #111; border-radius: 12px; padding: 16px 18px; }
+  .info-label { font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #444; margin-bottom: 6px; }
+  .info-val { font-size: 16px; font-weight: 500; color: #fff; }
+
+  .tabs { display: flex; background: #0f0f0f; border-radius: 10px; padding: 4px; gap: 3px; margin-bottom: 16px; }
+  .tab { flex: 1; text-align: center; font-size: 13px; font-weight: 500; padding: 9px; border-radius: 8px; cursor: pointer; color: #444; border: none; background: none; font-family: 'Inter', sans-serif; transition: all 0.15s; }
+  .tab.active { background: #1e1e1e; color: #fff; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .notes-text { font-size: 16px; color: #aaa; line-height: 1.75; padding: 16px; background: #0d0d0d; border-radius: 12px; border-left: 3px solid #00d084; }
+
+  .email-item { padding: 14px 16px; background: #0d0d0d; border-radius: 12px; margin-bottom: 8px; border: 1px solid #1a1a1a; }
+  .email-from { font-size: 12px; color: #555; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .email-subj { font-size: 15px; font-weight: 500; color: #fff; }
+  .email-preview { font-size: 13px; color: #444; margin-top: 5px; line-height: 1.5; }
+
+  .call-item { display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: #0d0d0d; border-radius: 12px; margin-bottom: 8px; border: 1px solid #1a1a1a; }
+  .call-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .dot-in { background: #00d084; }
+  .dot-out { background: #0a84ff; }
+  .call-dir { font-size: 13px; color: #555; width: 64px; }
+  .call-dur { font-size: 15px; font-weight: 500; color: #fff; flex: 1; }
+  .call-date { font-size: 12px; color: #444; }
+
+  .right-col { display: flex; flex-direction: column; gap: 14px; }
+  .ai-card, .pipe-card { background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 20px; padding: 1.5rem; }
+  .panel-title { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #444; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .panel-title::after { content:''; flex:1; height:1px; background:#1a1a1a; }
+
+  .tip { margin-bottom: 18px; }
+  .tip:last-child { margin-bottom: 0; }
+  .tip-head { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 5px; }
+  .tip-body { font-size: 13px; color: #555; line-height: 1.6; }
+
+  .panel-title { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #666; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .panel-title::after { content:''; flex:1; height:1px; background:#1a1a1a; }
+
+  .tip { margin-bottom: 20px; }
+  .tip:last-child { margin-bottom: 0; }
+  .tip-head { font-size: 16px; font-weight: 600; color: #fff; margin-bottom: 6px; }
+  .tip-body { font-size: 14px; color: #888; line-height: 1.65; }
+
+  .pipe-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #111; }
+  .pipe-row:last-child { border-bottom: none; }
+  .pipe-stage { font-size: 14px; color: #888; width: 84px; }
+  .pipe-track { flex: 1; height: 3px; background: #1a1a1a; border-radius: 2px; }
+  .pipe-fill { height: 3px; background: #fff; border-radius: 2px; }
+  .pipe-count { font-size: 24px; font-weight: 400; color: #fff; width: 28px; text-align: right; }
+  .deeper-btn {
+    width: 100%; margin-top: 14px; padding: 13px; border-radius: 10px;
+    font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+    background: #141414; border: 1px solid #333; color: #888;
+    font-family: 'Inter', sans-serif; transition: all 0.2s;
+  }
+  .deeper-btn:hover { background: #1e1e1e; color: #fff; border-color: #555; }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div>
+      <div class="brand">Recruitment</div>
+      <div class="topbar-date">Tuesday, July 1, 2025 · P&C Insurance</div>
+    </div>
+    <div class="stats-row">
+      <div class="stat"><div class="stat-val">4</div><div class="stat-label">Today</div></div>
+      <div class="stat"><div class="stat-val">34</div><div class="stat-label">Pipeline</div></div>
+      <div class="stat"><div class="stat-val">11</div><div class="stat-label">Open</div></div>
+      <div class="stat"><div class="stat-val">2</div><div class="stat-label">Placed</div></div>
+      <div class="sync-dot"></div>
+    </div>
+  </div>
+
+  <div class="schedule-strip">
+    <div class="sched-item done" onclick="selectSched(0)">
+      <div class="sched-time">9:00 AM</div>
+      <div class="sched-name">Sarah Chen</div>
+      <div class="sched-role">Claims Director</div>
+    </div>
+    <div class="sched-item done" onclick="selectSched(1)">
+      <div class="sched-time">10:30 AM</div>
+      <div class="sched-name">Marcus Webb</div>
+      <div class="sched-role">Underwriting VP</div>
+    </div>
+    <div class="sched-item active" onclick="selectSched(2)">
+      <div class="sched-time"><span class="now-dot"></span>2:00 PM</div>
+      <div class="sched-name">Priya Nair</div>
+      <div class="sched-role">Actuary II</div>
+    </div>
+    <div class="sched-item" onclick="selectSched(3)">
+      <div class="sched-time">4:00 PM</div>
+      <div class="sched-name">James Torres</div>
+      <div class="sched-role">Loss Control Mgr</div>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="main-card">
+        <div class="cand-name">Priya Nair</div>
+        <div class="cand-title">Associate Actuary II · Travelers Insurance</div>
+        <div class="cand-tags">
+          <span class="tag tag-now">▶ 2:00 PM Today</span>
+          <span class="tag tag-gray">FCAS Candidate</span>
+          <span class="tag tag-gray">8 yrs exp</span>
+        </div>
+
+        <div class="contact-row">
+          <a class="contact-btn primary" href="https://linkedin.com" target="_blank">↗ LinkedIn</a>
+          <a class="contact-btn" href="mailto:priya.nair@email.com">✉ priya.nair@email.com</a>
+          <a class="contact-btn" href="tel:6175550148">✆ (617) 555-0148</a>
+          <a class="contact-btn" href="https://zoom.us" target="_blank">⬛ Join Zoom</a>
+        </div>
+
+        <div class="info-row">
+          <div class="info-cell"><div class="info-label">Stage</div><div class="info-val">First Call</div></div>
+          <div class="info-cell"><div class="info-label">Compensation</div><div class="info-val">$135–155k</div></div>
+          <div class="info-cell"><div class="info-label">Format</div><div class="info-val">Zoom · 45 min</div></div>
+          <div class="info-cell"><div class="info-label">Location</div><div class="info-val">Hartford, CT</div></div>
+        </div>
+
+        <div class="tabs">
+          <button class="tab active" onclick="switchTab(this,'notes')">Notes</button>
+          <button class="tab" onclick="switchTab(this,'emails')">Emails</button>
+          <button class="tab" onclick="switchTab(this,'calls')">Calls</button>
+        </div>
+
+        <div id="notes" class="tab-content active">
+          <div class="notes-text">Strong personal auto reserving background. Currently studying for FCAS exam 8 this fall. Expressed strong interest in moving to a smaller carrier with more visibility into leadership decisions. Follow up on her exam timeline and comp expectations post-exam.</div>
+        </div>
+        <div id="emails" class="tab-content">
+          <div class="email-item">
+            <div class="email-from"><span>hiring.manager@hartford.com</span><span>Jun 28</span></div>
+            <div class="email-subj">Re: Priya Nair — Sr. Actuary role</div>
+            <div class="email-preview">We're very interested in moving forward. Budget has been approved…</div>
+          </div>
+          <div class="email-item">
+            <div class="email-from"><span>priya.nair@email.com</span><span>Jun 25</span></div>
+            <div class="email-subj">Following up on our conversation</div>
+            <div class="email-preview">Thank you for reaching out. I'd be open to learning more…</div>
+          </div>
+        </div>
+        <div id="calls" class="tab-content">
+          <div class="call-item">
+            <div class="call-dot dot-out"></div>
+            <span class="call-dir">Outbound</span>
+            <span class="call-dur">12m 34s</span>
+            <span class="call-date">Jun 24, 2:15 PM</span>
+          </div>
+          <div class="call-item">
+            <div class="call-dot dot-in"></div>
+            <span class="call-dir">Inbound</span>
+            <span class="call-dur">4m 10s</span>
+            <span class="call-date">Jun 20, 11:03 AM</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="right-col">
+      <div class="ai-card">
+        <div class="panel-title">AI Prep · Priya</div>
+        <div class="tip">
+          <div class="tip-head">Anchor comp now</div>
+          <div class="tip-body">If she passes FCAS exam 8 this fall her floor moves up. Get her number before that happens.</div>
+        </div>
+        <div class="tip">
+          <div class="tip-head">Lead with visibility</div>
+          <div class="tip-body">Personal auto reserving talent is scarce. Frame the role around leadership scope, not just salary.</div>
+        </div>
+        <div class="tip">
+          <div class="tip-head">Watch study support</div>
+          <div class="tip-body">Travelers offers strong FCAS benefits. Be ready with what the new role offers instead.</div>
+        </div>
+        <button class="deeper-btn">↗ Full prep notes</button>
+      </div>
+
+      <div class="pipe-card">
+        <div class="panel-title">Pipeline</div>
+        <div class="pipe-row"><span class="pipe-stage">Sourced</span><div class="pipe-track"><div class="pipe-fill" style="width:100%"></div></div><span class="pipe-count">14</span></div>
+        <div class="pipe-row"><span class="pipe-stage">First call</span><div class="pipe-track"><div class="pipe-fill" style="width:64%"></div></div><span class="pipe-count">9</span></div>
+        <div class="pipe-row"><span class="pipe-stage">Submitted</span><div class="pipe-track"><div class="pipe-fill" style="width:43%"></div></div><span class="pipe-count">6</span></div>
+        <div class="pipe-row"><span class="pipe-stage">Interviewing</span><div class="pipe-track"><div class="pipe-fill" style="width:29%"></div></div><span class="pipe-count">4</span></div>
+        <div class="pipe-row"><span class="pipe-stage">Placed</span><div class="pipe-track"><div class="pipe-fill" style="width:7%"></div></div><span class="pipe-count">1</span></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+function switchTab(btn, id) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(id).classList.add('active');
+}
+function selectSched(i) {
+  document.querySelectorAll('.sched-item').forEach((el,idx)=>{
+    el.classList.remove('active');
+    if(idx===i) el.classList.add('active');
+  });
+}
+</script>
+</body>
+</html>
