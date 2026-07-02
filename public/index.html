@@ -21,11 +21,23 @@
   .sync-dot.loading { background: #f5a623; box-shadow: 0 0 8px #f5a623; animation: pulse 1.2s infinite; }
   @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
 
+  /* Day toggle */
+  .day-toggle { display: flex; background: #0f0f0f; border-radius: 12px; padding: 4px; gap: 3px; margin-bottom: 16px; width: fit-content; }
+  .day-btn { padding: 10px 24px; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: none; color: #444; font-family: 'Inter', sans-serif; transition: all 0.15s; letter-spacing: 0.03em; }
+  .day-btn.active { background: #fff; color: #000; }
+  .day-btn.tomorrow.active { background: #1a1a1a; color: #fff; border: 1px solid #333; }
+  .tomorrow-banner { display: none; background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 12px; padding: 12px 18px; margin-bottom: 16px; font-size: 14px; color: #666; }
+  .tomorrow-banner.visible { display: block; }
+  .tomorrow-banner strong { color: #fff; }
+
   .schedule-strip { display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 4px; }
   .sched-item { flex-shrink: 0; padding: 14px 20px; border-radius: 12px; cursor: pointer; border: 1.5px solid #1a1a1a; background: #0a0a0a; min-width: 150px; transition: all 0.2s; }
   .sched-item:hover { border-color: #333; }
   .sched-item.active { background: #fff; border-color: #fff; }
   .sched-item.done { opacity: 0.4; }
+  .sched-item.tomorrow-item.active { background: #1a1a1a; border-color: #333; }
+  .sched-item.tomorrow-item.active .sched-name { color: #fff; }
+  .sched-item.tomorrow-item.active .sched-time { color: #666; }
   .sched-time { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: #555; margin-bottom: 6px; }
   .sched-item.active .sched-time { color: #000; }
   .sched-name { font-size: 15px; font-weight: 600; color: #fff; }
@@ -35,13 +47,14 @@
   .now-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #00d084; margin-right: 5px; box-shadow: 0 0 6px #00d084; vertical-align: middle; }
 
   .layout { display: grid; grid-template-columns: 1fr 280px; gap: 20px; }
-
   .main-card { background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 20px; padding: 2rem; }
+  .main-card.tomorrow-mode { border-color: #1e1e1e; }
   .cand-name { font-size: 52px; font-weight: 700; color: #fff; line-height: 1; letter-spacing: -0.02em; margin-bottom: 8px; }
   .cand-title { font-size: 17px; color: #555; margin-bottom: 16px; }
   .cand-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 2rem; }
   .tag { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 5px 14px; border-radius: 20px; }
   .tag-now { background: #00d084; color: #000; }
+  .tag-tomorrow { background: #1a1a1a; color: #888; border: 1px solid #333; }
   .tag-gray { background: #1a1a1a; color: #666; border: 1px solid #222; }
 
   .contact-row { display: flex; gap: 10px; margin-bottom: 2rem; flex-wrap: wrap; }
@@ -104,7 +117,7 @@
   .modal { background: #0a0a0a; border: 1px solid #1a1a1a; border-top: 2px solid #00d084; border-radius: 20px; padding: 2rem; width: 560px; max-width: 92vw; max-height: 80vh; overflow-y: auto; }
   .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
   .modal-title { font-size: 24px; font-weight: 700; color: #fff; }
-  .modal-close { background: none; border: none; color: #444; font-size: 22px; cursor: pointer; padding: 4px; }
+  .modal-close { background: none; border: none; color: #444; font-size: 22px; cursor: pointer; }
   .modal-close:hover { color: #fff; }
   .prep-block { background: #111; border-left: 3px solid #00d084; padding: 14px 16px; margin-bottom: 10px; border-radius: 0 8px 8px 0; }
   .prep-block p { font-size: 14px; color: #999; line-height: 1.75; }
@@ -115,7 +128,7 @@
 
 <div class="topbar">
   <div>
-    <div class="brand" id="firm-name">Recruitment</div>
+    <div class="brand">Recruitment</div>
     <div class="topbar-date" id="today-date">Loading…</div>
   </div>
   <div class="stats-row">
@@ -127,9 +140,17 @@
   </div>
 </div>
 
-<div class="schedule-strip" id="schedule-strip">
-  <div class="sched-item active"><div class="sched-time">Loading…</div><div class="sched-name">—</div></div>
+<!-- Day toggle -->
+<div class="day-toggle">
+  <button class="day-btn active" id="btn-today" onclick="switchDay('today')">Today</button>
+  <button class="day-btn tomorrow" id="btn-tomorrow" onclick="switchDay('tomorrow')">Tomorrow</button>
 </div>
+
+<div class="tomorrow-banner" id="tomorrow-banner">
+  Planning ahead — <strong id="tomorrow-label"></strong> · Read-only preview
+</div>
+
+<div class="schedule-strip" id="schedule-strip"></div>
 
 <div class="layout">
   <div>
@@ -149,7 +170,6 @@
       <div id="tab-calls" class="tab-content"><div id="calls-list"></div></div>
     </div>
   </div>
-
   <div class="right-col">
     <div class="ai-card">
       <div class="panel-title" id="prep-title">AI Prep</div>
@@ -174,58 +194,86 @@
 </div>
 
 <script>
-// ── State ─────────────────────────────────────
 const state = {
-  meetings: [],
+  todayMeetings: [],
+  tomorrowMeetings: [],
   candidates: {},
   emails: {},
   calls: {},
   pipeline: [],
-  selectedIdx: 0
+  selectedIdx: 0,
+  currentDay: 'today'
 };
 
-// ── Helpers ───────────────────────────────────
-function today() {
-  return new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+function fmtDate(date) {
+  return date.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
 }
 function fmtTime(iso) {
   if (!iso) return '';
   return new Date(iso).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true });
 }
-function initials(name) {
-  return (name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-}
 function setSync(live) {
   const dot = document.getElementById('sync-dot');
   dot.className = 'sync-dot' + (live ? '' : ' loading');
 }
+function activeMeetings() {
+  return state.currentDay === 'today' ? state.todayMeetings : state.tomorrowMeetings;
+}
 
-// ── API calls to our server ───────────────────
+// ── API calls ─────────────────────────────────
 async function apiFetch(path) {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
-// ── Load calendar ─────────────────────────────
+async function aiCall(systemPrompt, userContent) {
+  const res = await fetch('/api/ai', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userContent }]
+    })
+  });
+  const data = await res.json();
+  return (data.content||[]).map(b=>b.text||'').join('');
+}
+
 async function loadCalendar() {
   try {
     const data = await apiFetch('/api/calendar');
     if (data.value && data.value.length) {
-      state.meetings = data.value.map(e => ({
-        title: e.subject || 'Meeting',
-        start: e.start?.dateTime,
-        attendees: (e.attendees||[]).map(a=>a.emailAddress?.name).filter(Boolean),
-        joinUrl: e.onlineMeeting?.joinUrl || null,
-        preview: e.bodyPreview || ''
-      }));
+      state.todayMeetings = data.value.map(mapMeeting);
       return;
     }
   } catch(e) { console.warn('Calendar:', e.message); }
   useDemoMeetings();
 }
 
-// ── Load RecruiterFlow ────────────────────────
+async function loadTomorrowCalendar() {
+  try {
+    const data = await apiFetch('/api/calendar/tomorrow');
+    if (data.value && data.value.length) {
+      state.tomorrowMeetings = data.value.map(mapMeeting);
+      return;
+    }
+  } catch(e) { console.warn('Tomorrow calendar:', e.message); }
+  useDemoTomorrowMeetings();
+}
+
+function mapMeeting(e) {
+  return {
+    title: e.subject || 'Meeting',
+    start: e.start?.dateTime,
+    attendees: (e.attendees||[]).map(a=>a.emailAddress?.name).filter(Boolean),
+    joinUrl: e.onlineMeeting?.joinUrl || null,
+    preview: e.bodyPreview || ''
+  };
+}
+
 async function loadCandidates() {
   try {
     const data = await apiFetch('/api/candidates');
@@ -234,18 +282,18 @@ async function loadCandidates() {
       list.forEach(c => {
         const name = `${c.first_name||''} ${c.last_name||''}`.trim();
         state.candidates[name] = {
-          name, title: c.current_title || c.job_title || '',
-          company: c.current_company || c.company || '',
-          email: c.email || '', phone: c.phone || c.mobile || '',
-          linkedin: c.linkedin_url || c.linkedin || '',
-          stage: c.stage || c.status || '',
-          notes: c.notes || c.description || '',
-          salary: c.salary || c.expected_salary || '',
-          tags: c.tags || []
+          name, title: c.current_title||c.job_title||'',
+          company: c.current_company||c.company||'',
+          email: c.email||'', phone: c.phone||c.mobile||'',
+          linkedin: c.linkedin_url||c.linkedin||'',
+          stage: c.stage||c.status||'',
+          notes: c.notes||c.description||'',
+          salary: c.salary||c.expected_salary||'',
+          tags: c.tags||[]
         };
       });
       const stages = {};
-      list.forEach(c => { const s = c.stage||c.status||'Unknown'; stages[s]=(stages[s]||0)+1; });
+      list.forEach(c=>{ const s=c.stage||c.status||'Unknown'; stages[s]=(stages[s]||0)+1; });
       state.pipeline = Object.entries(stages).map(([s,n])=>({stage:s,count:n}));
       document.getElementById('stat-pipeline').textContent = list.length;
       const placed = state.pipeline.find(p=>p.stage.toLowerCase().includes('place'));
@@ -257,47 +305,56 @@ async function loadCandidates() {
   useDemoPipeline();
 }
 
-// ── Load emails for a candidate ───────────────
 async function loadEmails(name) {
   try {
     const data = await apiFetch(`/api/emails?name=${encodeURIComponent(name)}`);
     state.emails[name] = (data.value||[]).map(m=>({
-      subject: m.subject || '(no subject)',
-      from: m.from?.emailAddress?.name || m.from?.emailAddress?.address || 'Unknown',
-      date: m.receivedDateTime,
-      preview: m.bodyPreview || ''
+      subject: m.subject||'(no subject)',
+      from: m.from?.emailAddress?.name||m.from?.emailAddress?.address||'Unknown',
+      date: m.receivedDateTime, preview: m.bodyPreview||''
     }));
   } catch(e) { state.emails[name] = []; }
 }
 
-// ── Load RingCentral calls ────────────────────
 async function loadCalls(name) {
   try {
     const data = await apiFetch('/api/calls');
     const first = name.split(' ')[0].toLowerCase();
     state.calls[name] = (data.records||[])
-      .filter(r => ((r.to?.name||'')+(r.from?.name||'')).toLowerCase().includes(first))
-      .map(r => ({ direction: r.direction, duration: r.duration, startTime: r.startTime, result: r.result }));
-  } catch(e) { state.calls[name] = []; }
+      .filter(r=>((r.to?.name||'')+(r.from?.name||'')).toLowerCase().includes(first))
+      .map(r=>({ direction:r.direction, duration:r.duration, startTime:r.startTime, result:r.result }));
+  } catch(e) { state.calls[name]=[]; }
 }
 
 // ── Demo fallbacks ────────────────────────────
 function useDemoMeetings() {
   const b = new Date(); b.setHours(9,0,0,0);
-  const t = (h,m) => { const d=new Date(b); d.setHours(h,m); return d.toISOString(); };
-  state.meetings = [
+  const t=(h,m)=>{ const d=new Date(b); d.setHours(h,m); return d.toISOString(); };
+  state.todayMeetings = [
     { title:'Sarah Chen',   start:t(9,0),  attendees:['Sarah Chen'],   joinUrl:null },
     { title:'Marcus Webb',  start:t(10,30),attendees:['Marcus Webb'],  joinUrl:null },
     { title:'Priya Nair',   start:t(14,0), attendees:['Priya Nair'],   joinUrl:'https://zoom.us/j/demo' },
     { title:'James Torres', start:t(16,0), attendees:['James Torres'], joinUrl:null }
   ];
 }
+function useDemoTomorrowMeetings() {
+  const b = new Date(); b.setDate(b.getDate()+1); b.setHours(9,0,0,0);
+  const t=(h,m)=>{ const d=new Date(b); d.setHours(h,m); return d.toISOString(); };
+  state.tomorrowMeetings = [
+    { title:'David Park',   start:t(10,0), attendees:['David Park'],   joinUrl:null },
+    { title:'Lisa Romero',  start:t(13,30),attendees:['Lisa Romero'],  joinUrl:'https://zoom.us/j/demo2' },
+    { title:'Tom Bradley',  start:t(15,0), attendees:['Tom Bradley'],  joinUrl:null }
+  ];
+}
 function useDemoCandidates() {
   state.candidates = {
-    'Priya Nair':   { name:'Priya Nair',   title:'Associate Actuary II',company:'Travelers Insurance',email:'priya.nair@email.com',  phone:'(617) 555-0148',linkedin:'https://linkedin.com/in/priyanair',  stage:'First Call',  notes:'Strong personal auto reserving background. Studying for FCAS exam 8 this fall. Interested in moving to a smaller carrier with more visibility. Follow up on exam timeline and post-exam comp expectations.',salary:'$135–155k',tags:['FCAS Candidate','8 yrs exp'] },
-    'James Torres': { name:'James Torres', title:'Loss Control Manager', company:'Liberty Mutual',     email:'j.torres@email.com',    phone:'(312) 555-0293',linkedin:'https://linkedin.com/in/jamestorres',stage:'First Call',  notes:'Referred by Marcus Webb. CSP certified, heavy commercial property focus. Seeking Director-level move. Prefers Midwest, open to remote.',salary:'$120–140k',tags:['Commercial Lines','12 yrs exp'] },
-    'Sarah Chen':   { name:'Sarah Chen',   title:'Claims Director',      company:'Nationwide',         email:'s.chen@email.com',      phone:'(614) 555-0211',linkedin:'https://linkedin.com/in/sarahchen',  stage:'Submitted',   notes:'Strong claims leadership background. 15 years P&C. Very motivated to move.',salary:'$150–170k',tags:['Claims','15 yrs exp'] },
-    'Marcus Webb':  { name:'Marcus Webb',  title:'Underwriting VP',      company:'Chubb',              email:'m.webb@email.com',      phone:'(212) 555-0399',linkedin:'https://linkedin.com/in/marcuswebb', stage:'Interviewing',notes:'Senior underwriting leader. Commercial specialty focus. Strong references.',salary:'$175–200k',tags:['Underwriting','20 yrs exp'] }
+    'Priya Nair':   { name:'Priya Nair',   title:'Associate Actuary II', company:'Travelers Insurance',email:'priya.nair@email.com',  phone:'(617) 555-0148',linkedin:'https://linkedin.com/in/priyanair',  stage:'First Call',  notes:'Strong personal auto reserving background. Studying for FCAS exam 8 this fall. Interested in moving to a smaller carrier with more visibility. Follow up on exam timeline and post-exam comp expectations.',salary:'$135–155k',tags:['FCAS Candidate','8 yrs exp'] },
+    'James Torres': { name:'James Torres', title:'Loss Control Manager',  company:'Liberty Mutual',    email:'j.torres@email.com',    phone:'(312) 555-0293',linkedin:'https://linkedin.com/in/jamestorres',stage:'First Call',  notes:'Referred by Marcus Webb. CSP certified, heavy commercial property focus. Seeking Director-level move. Prefers Midwest, open to remote.',salary:'$120–140k',tags:['Commercial Lines','12 yrs exp'] },
+    'Sarah Chen':   { name:'Sarah Chen',   title:'Claims Director',       company:'Nationwide',        email:'s.chen@email.com',      phone:'(614) 555-0211',linkedin:'https://linkedin.com/in/sarahchen',  stage:'Submitted',   notes:'Strong claims leadership background. 15 years P&C. Very motivated to move.',salary:'$150–170k',tags:['Claims','15 yrs exp'] },
+    'Marcus Webb':  { name:'Marcus Webb',  title:'Underwriting VP',       company:'Chubb',             email:'m.webb@email.com',      phone:'(212) 555-0399',linkedin:'https://linkedin.com/in/marcuswebb', stage:'Interviewing',notes:'Senior underwriting leader. Commercial specialty focus. Strong references.',salary:'$175–200k',tags:['Underwriting','20 yrs exp'] },
+    'David Park':   { name:'David Park',   title:'Sr. Claims Adjuster',   company:'Allstate',          email:'d.park@email.com',      phone:'(773) 555-0102',linkedin:'https://linkedin.com/in/davidpark',  stage:'First Call',  notes:'10 years complex commercial claims. Interested in management track.',salary:'$95–115k',tags:['Claims','10 yrs exp'] },
+    'Lisa Romero':  { name:'Lisa Romero',  title:'Underwriting Manager',  company:'Markel',            email:'l.romero@email.com',    phone:'(804) 555-0177',linkedin:'https://linkedin.com/in/lisaromero', stage:'Sourced',     notes:'Specialty lines background, E&S market. Strong technical underwriter.',salary:'$130–150k',tags:['Specialty Lines','E&S'] },
+    'Tom Bradley':  { name:'Tom Bradley',  title:'Risk Engineer',         company:'FM Global',         email:'t.bradley@email.com',   phone:'(401) 555-0244',linkedin:'https://linkedin.com/in/tombradley', stage:'Sourced',     notes:'Property risk engineering, large commercial accounts. PE licensed.',salary:'$110–130k',tags:['Risk Engineering','PE'] }
   };
 }
 function useDemoPipeline() {
@@ -307,20 +364,51 @@ function useDemoPipeline() {
   ];
 }
 
-// ── Render schedule strip ─────────────────────
+// ── Day toggle ────────────────────────────────
+function switchDay(day) {
+  state.currentDay = day;
+  state.selectedIdx = 0;
+  document.getElementById('btn-today').className = 'day-btn' + (day==='today'?' active':'');
+  document.getElementById('btn-tomorrow').className = 'day-btn tomorrow' + (day==='tomorrow'?' active':'');
+  const banner = document.getElementById('tomorrow-banner');
+  banner.className = 'tomorrow-banner' + (day==='tomorrow'?' visible':'');
+  if (day==='tomorrow') {
+    const t = new Date(); t.setDate(t.getDate()+1);
+    document.getElementById('tomorrow-label').textContent = t.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+    if (!state.tomorrowMeetings.length) loadTomorrowCalendar().then(()=>{ renderSchedule(); renderCard(); generatePrep(); });
+  }
+  renderSchedule();
+  renderCard();
+  generatePrep();
+}
+
+// ── Render schedule ───────────────────────────
 function renderSchedule() {
   const now = new Date();
-  document.getElementById('today-date').textContent = today() + ' · P&C Insurance';
-  document.getElementById('stat-today').textContent = state.meetings.length;
+  const meetings = activeMeetings();
+  const isTomorrow = state.currentDay === 'tomorrow';
+
+  document.getElementById('today-date').textContent =
+    (isTomorrow ? 'Tomorrow — ' : 'Today — ') +
+    new Date(isTomorrow ? Date.now()+86400000 : Date.now()).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}) +
+    ' · P&C Insurance';
+
+  if (!isTomorrow) document.getElementById('stat-today').textContent = meetings.length;
 
   const strip = document.getElementById('schedule-strip');
-  strip.innerHTML = state.meetings.map((m, i) => {
+  if (!meetings.length) {
+    strip.innerHTML = '<div style="color:#333;font-style:italic;font-size:14px;padding:14px 0">No meetings scheduled</div>';
+    return;
+  }
+
+  strip.innerHTML = meetings.map((m,i) => {
     const mt = new Date(m.start);
     const name = m.attendees?.[0] || m.title;
-    const done = mt < now && (now - mt) > 30*60000;
-    const isNow = !done && Math.abs(now - mt) < 90*60000;
+    const done = !isTomorrow && mt < now && (now-mt) > 30*60000;
+    const isNow = !isTomorrow && !done && Math.abs(now-mt) < 90*60000;
     const nowDot = isNow ? '<span class="now-dot"></span>' : '';
-    return `<div class="sched-item${i===state.selectedIdx?' active':''}${done?' done':''}" onclick="selectCandidate(${i})">
+    const tClass = isTomorrow ? ' tomorrow-item' : '';
+    return `<div class="sched-item${i===state.selectedIdx?' active':''}${done?' done':''}${tClass}" onclick="selectCandidate(${i})">
       <div class="sched-time">${nowDot}${fmtTime(m.start)}</div>
       <div class="sched-name">${name}</div>
       <div class="sched-role">${(state.candidates[name]||{}).title||''}</div>
@@ -328,26 +416,38 @@ function renderSchedule() {
   }).join('');
 }
 
-// ── Render main candidate card ────────────────
+// ── Render main card ──────────────────────────
 function renderCard() {
-  const m = state.meetings[state.selectedIdx];
-  if (!m) return;
+  const meetings = activeMeetings();
+  const m = meetings[state.selectedIdx];
+  if (!m) {
+    document.getElementById('cand-name').textContent = 'No meetings';
+    document.getElementById('cand-title').textContent = '';
+    document.getElementById('cand-tags').innerHTML = '';
+    document.getElementById('contact-row').innerHTML = '';
+    document.getElementById('info-row').innerHTML = '';
+    document.getElementById('notes-text').textContent = 'No meetings scheduled for this day.';
+    return;
+  }
+
   const now = new Date();
   const mt = new Date(m.start);
   const name = m.attendees?.[0] || m.title;
-  const c = state.candidates[name] || { name, title:'', company:'', email:'', phone:'', linkedin:'', stage:'', notes:'No notes on file.', salary:'', tags:[] };
-  const done = mt < now && (now - mt) > 30*60000;
-  const isNow = !done && Math.abs(now - mt) < 90*60000;
+  const c = state.candidates[name] || { name, title:'',company:'',email:'',phone:'',linkedin:'',stage:'',notes:'No notes on file.',salary:'',tags:[] };
+  const isTomorrow = state.currentDay === 'tomorrow';
+  const done = !isTomorrow && mt < now && (now-mt) > 30*60000;
+  const isNow = !isTomorrow && !done && Math.abs(now-mt) < 90*60000;
 
+  document.getElementById('main-card').className = 'main-card' + (isTomorrow ? ' tomorrow-mode' : '');
   document.getElementById('cand-name').textContent = name;
-  document.getElementById('cand-title').textContent = [c.title, c.company].filter(Boolean).join(' · ');
+  document.getElementById('cand-title').textContent = [c.title,c.company].filter(Boolean).join(' · ');
 
-  // Tags
-  const timeTag = `<span class="tag tag-now">${isNow?'▶ ':done?'✓ ':''}${fmtTime(m.start)}</span>`;
-  const otherTags = (c.tags||[]).map(t=>`<span class="tag tag-gray">${t}</span>`).join('');
-  document.getElementById('cand-tags').innerHTML = timeTag + otherTags;
+  const timeTagCls = isTomorrow ? 'tag-tomorrow' : 'tag-now';
+  const timePrefix = isTomorrow ? '◷ ' : isNow ? '▶ ' : done ? '✓ ' : '';
+  const tags = `<span class="tag ${timeTagCls}">${timePrefix}${fmtTime(m.start)}</span>` +
+    (c.tags||[]).map(t=>`<span class="tag tag-gray">${t}</span>`).join('');
+  document.getElementById('cand-tags').innerHTML = tags;
 
-  // Contact buttons
   let btns = '';
   if (c.linkedin) btns += `<a class="contact-btn primary" href="${c.linkedin}" target="_blank">↗ LinkedIn</a>`;
   if (c.email)    btns += `<a class="contact-btn" href="mailto:${c.email}">✉ ${c.email}</a>`;
@@ -356,36 +456,31 @@ function renderCard() {
   btns += `<a class="contact-btn" href="https://app.recruiterflow.com" target="_blank">↗ RecruiterFlow</a>`;
   document.getElementById('contact-row').innerHTML = btns;
 
-  // Info grid
   document.getElementById('info-row').innerHTML = `
     <div class="info-cell"><div class="info-label">Stage</div><div class="info-val">${c.stage||'—'}</div></div>
     <div class="info-cell"><div class="info-label">Compensation</div><div class="info-val">${c.salary||'—'}</div></div>
     <div class="info-cell"><div class="info-label">Meeting</div><div class="info-val">${fmtTime(m.start)}</div></div>
     <div class="info-cell"><div class="info-label">Email</div><div class="info-val">${c.email||'—'}</div></div>`;
 
-  // Notes
   document.getElementById('notes-text').textContent = c.notes || 'No notes on file.';
 
-  // Emails
-  const emails = state.emails[name] || [];
+  const emails = state.emails[name]||[];
   document.getElementById('emails-list').innerHTML = emails.length
     ? emails.map(e=>`<div class="email-item">
-        <div class="email-from"><span>${e.from}</span><span>${e.date ? new Date(e.date).toLocaleDateString() : ''}</span></div>
+        <div class="email-from"><span>${e.from}</span><span>${e.date?new Date(e.date).toLocaleDateString():''}</span></div>
         <div class="email-subj">${e.subject}</div>
         <div class="email-preview">${(e.preview||'').slice(0,140)}…</div>
       </div>`).join('')
     : '<div class="empty-state">No recent emails found</div>';
 
-  // Calls
-  const calls = state.calls[name] || [];
+  const calls = state.calls[name]||[];
   document.getElementById('calls-list').innerHTML = calls.length
-    ? calls.map(r => {
-        const dir = (r.direction||'').toLowerCase();
-        const dotCls = dir==='inbound'?'dot-in':dir==='outbound'?'dot-out':'dot-missed';
-        const mins = Math.floor((r.duration||0)/60);
-        const secs = (r.duration||0)%60;
+    ? calls.map(r=>{
+        const dir=(r.direction||'').toLowerCase();
+        const dot=dir==='inbound'?'dot-in':dir==='outbound'?'dot-out':'dot-missed';
+        const mins=Math.floor((r.duration||0)/60), secs=(r.duration||0)%60;
         return `<div class="call-item">
-          <div class="call-dot ${dotCls}"></div>
+          <div class="call-dot ${dot}"></div>
           <span class="call-dir">${r.direction||'—'}</span>
           <span class="call-dur">${mins}m ${secs}s${r.result?' · '+r.result:''}</span>
           <span class="call-date">${r.startTime?new Date(r.startTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):''}</span>
@@ -393,52 +488,40 @@ function renderCard() {
       }).join('')
     : '<div class="empty-state">No calls logged today</div>';
 
-  // Reset tabs to Notes
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
   document.querySelector('.tab').classList.add('active');
   document.getElementById('tab-notes').classList.add('active');
 }
 
-// ── Render pipeline ───────────────────────────
-function renderPipeline() {
-  if (!state.pipeline.length) return;
-  const max = Math.max(...state.pipeline.map(p=>p.count), 1);
-  document.getElementById('pipeline-rows').innerHTML = state.pipeline.map(p=>`
-    <div class="pipe-row">
-      <span class="pipe-stage">${p.stage}</span>
-      <div class="pipe-track"><div class="pipe-fill" style="width:${Math.round(p.count/max*100)}%"></div></div>
-      <span class="pipe-count">${p.count}</span>
-    </div>`).join('');
-}
-
-// ── AI Prep ───────────────────────────────────
+// ── AI Prep — routes through server ──────────
 async function generatePrep() {
-  const m = state.meetings[state.selectedIdx];
+  const meetings = activeMeetings();
+  const m = meetings[state.selectedIdx];
   if (!m) return;
   const name = m.attendees?.[0] || m.title;
-  const c = state.candidates[name] || {};
-  const emails = (state.emails[name]||[]).map(e=>e.subject).join('; ') || 'none';
-  const calls = (state.calls[name]||[]).length;
+  const c = state.candidates[name]||{};
+  const isTomorrow = state.currentDay === 'tomorrow';
 
-  document.getElementById('prep-title').textContent = `AI Prep · ${name.split(' ')[0]}`;
+  document.getElementById('prep-title').textContent = `${isTomorrow?'Tomorrow Prep':'AI Prep'} · ${name.split(' ')[0]}`;
   document.getElementById('prep-tips').innerHTML = '<div class="tip-loading">Generating prep notes…</div>';
   document.getElementById('deeper-btn').style.display = 'none';
 
-  const context = `Candidate: ${name}\nTitle: ${c.title} at ${c.company}\nStage: ${c.stage}\nComp: ${c.salary}\nTags: ${(c.tags||[]).join(', ')}\nNotes: ${c.notes}\nRecent emails: ${emails}\nCalls today: ${calls}`;
+  const context = `Candidate: ${name}
+Title: ${c.title} at ${c.company}
+Stage: ${c.stage}
+Comp: ${c.salary}
+Tags: ${(c.tags||[]).join(', ')}
+Notes: ${c.notes}
+Recent emails: ${(state.emails[name]||[]).map(e=>e.subject).join('; ')||'none'}
+Calls logged: ${(state.calls[name]||[]).length}
+${isTomorrow?'This call is TOMORROW — focus on advance preparation.':''}`;
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6', max_tokens: 800,
-        system: 'You are an expert P&C insurance recruiter assistant. Return ONLY a JSON array of exactly 3 objects with keys "head" (3-5 word title) and "body" (1-2 sentences, specific and actionable). No markdown, no preamble, raw JSON only.',
-        messages: [{ role:'user', content: context }]
-      })
-    });
-    const data = await res.json();
-    const text = (data.content||[]).map(b=>b.text||'').join('');
+    const text = await aiCall(
+      'You are an expert P&C insurance recruiter assistant. Return ONLY a JSON array of exactly 3 objects with keys "head" (3-5 word title) and "body" (1-2 sentences, specific and actionable). No markdown, no preamble, raw JSON only.',
+      context
+    );
     const tips = JSON.parse(text.replace(/```json|```/g,'').trim());
     document.getElementById('prep-tips').innerHTML = tips.map(t=>`
       <div class="tip">
@@ -447,13 +530,11 @@ async function generatePrep() {
       </div>`).join('');
     document.getElementById('deeper-btn').style.display = 'flex';
   } catch(e) {
-    document.getElementById('prep-tips').innerHTML = `
-      <div class="tip"><div class="tip-head">Ready</div><div class="tip-body">Review the notes and call history before this conversation.</div></div>`;
+    document.getElementById('prep-tips').innerHTML = `<div class="tip"><div class="tip-head">Ready</div><div class="tip-body">Review the notes and call history in the tabs above before this call.</div></div>`;
     document.getElementById('deeper-btn').style.display = 'flex';
   }
 }
 
-// ── Select candidate ──────────────────────────
 function selectCandidate(idx) {
   state.selectedIdx = idx;
   renderSchedule();
@@ -461,7 +542,6 @@ function selectCandidate(idx) {
   generatePrep();
 }
 
-// ── Tabs ──────────────────────────────────────
 function switchTab(btn, id) {
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
@@ -469,60 +549,59 @@ function switchTab(btn, id) {
   document.getElementById(id).classList.add('active');
 }
 
-// ── Full prep modal ───────────────────────────
 async function openModal() {
   document.getElementById('modal').classList.add('open');
-  const m = state.meetings[state.selectedIdx];
-  const name = m?.attendees?.[0] || m?.title || 'Candidate';
-  const c = state.candidates[name] || {};
+  const meetings = activeMeetings();
+  const m = meetings[state.selectedIdx];
+  const name = m?.attendees?.[0]||m?.title||'Candidate';
+  const c = state.candidates[name]||{};
   document.getElementById('modal-title').textContent = `Full Prep · ${name}`;
   document.getElementById('modal-body').innerHTML = '<div class="prep-loading">Generating detailed prep…</div>';
 
   const context = `Candidate: ${name}\nTitle: ${c.title} at ${c.company}\nStage: ${c.stage}\nNotes: ${c.notes}\nEmails: ${(state.emails[name]||[]).map(e=>e.subject).join('; ')||'none'}`;
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6', max_tokens: 1200,
-        system: 'You are an expert P&C insurance recruiter coach. Write comprehensive call prep: opening approach, 3 key questions, likely objections and how to handle them, relevant P&C market context, and a suggested close. Be direct and specific. Use plain text with clear section headers separated by blank lines.',
-        messages: [{ role:'user', content: context }]
-      })
-    });
-    const data = await res.json();
-    const text = (data.content||[]).map(b=>b.text||'').join('');
+    const text = await aiCall(
+      'You are an expert P&C insurance recruiter coach. Write comprehensive call prep: opening approach, 3 key questions, likely objections and how to handle them, relevant P&C market context, and a suggested close. Be direct and specific. Use plain text with clear section headers separated by blank lines.',
+      context
+    );
     document.getElementById('modal-body').innerHTML = text.split('\n\n').filter(Boolean)
       .map(s=>`<div class="prep-block"><p>${s.replace(/\n/g,'<br>')}</p></div>`).join('');
   } catch(e) {
-    document.getElementById('modal-body').innerHTML = '<div class="prep-block"><p>Could not generate. Check your connection and try again.</p></div>';
+    document.getElementById('modal-body').innerHTML = '<div class="prep-block"><p>Could not generate. Try again in a moment.</p></div>';
   }
 }
 function closeModal() { document.getElementById('modal').classList.remove('open'); }
 
-// ── Main load ─────────────────────────────────
+function renderPipeline() {
+  if (!state.pipeline.length) return;
+  const max = Math.max(...state.pipeline.map(p=>p.count),1);
+  document.getElementById('pipeline-rows').innerHTML = state.pipeline.map(p=>`
+    <div class="pipe-row">
+      <span class="pipe-stage">${p.stage}</span>
+      <div class="pipe-track"><div class="pipe-fill" style="width:${Math.round(p.count/max*100)}%"></div></div>
+      <span class="pipe-count">${p.count}</span>
+    </div>`).join('');
+}
+
 async function loadAll() {
   setSync(false);
-  document.getElementById('today-date').textContent = today() + ' · P&C Insurance';
-
+  document.getElementById('today-date').textContent = fmtDate(new Date()) + ' · P&C Insurance';
   await Promise.all([loadCalendar(), loadCandidates()]);
 
-  // Auto-select next upcoming meeting
   const now = new Date();
-  const next = state.meetings.findIndex(m => new Date(m.start) >= now);
-  state.selectedIdx = next === -1 ? 0 : next;
-
+  const next = state.todayMeetings.findIndex(m=>new Date(m.start)>=now);
+  state.selectedIdx = next===-1 ? 0 : next;
+  document.getElementById('stat-today').textContent = state.todayMeetings.length;
   document.getElementById('stat-open').textContent = '11';
 
   renderSchedule();
   renderPipeline();
   renderCard();
 
-  // Load comms for all candidates in parallel, then re-render
-  const names = state.meetings.map(m => m.attendees?.[0] || m.title);
-  await Promise.all(names.flatMap(n => [loadEmails(n), loadCalls(n)]));
+  const names = state.todayMeetings.map(m=>m.attendees?.[0]||m.title);
+  await Promise.all(names.flatMap(n=>[loadEmails(n),loadCalls(n)]));
   renderCard();
-
   generatePrep();
   setSync(true);
 }
