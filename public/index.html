@@ -3,17 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dashboard Preview</title>
+<title>Recruitment Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { background: #000; min-height: 100vh; }
   body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; padding: 1.5rem; }
 
-  .topbar {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 2rem; padding-bottom: 1.25rem; border-bottom: 1px solid #1a1a1a;
-  }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; padding-bottom: 1.25rem; border-bottom: 1px solid #1a1a1a; }
   .brand { font-size: 14px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; }
   .topbar-date { font-size: 14px; color: #777; margin-top: 4px; }
   .stats-row { display: flex; gap: 32px; align-items: center; }
@@ -21,15 +18,14 @@
   .stat-val { font-size: 42px; font-weight: 600; color: #fff; line-height: 1; }
   .stat-label { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #666; margin-top: 6px; }
   .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #00d084; box-shadow: 0 0 8px #00d084; }
+  .sync-dot.loading { background: #f5a623; box-shadow: 0 0 8px #f5a623; animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
 
   .schedule-strip { display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 4px; }
-  .sched-item {
-    flex-shrink: 0; padding: 14px 20px; border-radius: 12px; cursor: pointer;
-    border: 1.5px solid #1a1a1a; background: #0a0a0a; min-width: 150px;
-    transition: all 0.2s;
-  }
+  .sched-item { flex-shrink: 0; padding: 14px 20px; border-radius: 12px; cursor: pointer; border: 1.5px solid #1a1a1a; background: #0a0a0a; min-width: 150px; transition: all 0.2s; }
+  .sched-item:hover { border-color: #333; }
   .sched-item.active { background: #fff; border-color: #fff; }
-  .sched-item.done { opacity: 0.35; }
+  .sched-item.done { opacity: 0.4; }
   .sched-time { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: #555; margin-bottom: 6px; }
   .sched-item.active .sched-time { color: #000; }
   .sched-name { font-size: 15px; font-weight: 600; color: #fff; }
@@ -49,13 +45,8 @@
   .tag-gray { background: #1a1a1a; color: #666; border: 1px solid #222; }
 
   .contact-row { display: flex; gap: 10px; margin-bottom: 2rem; flex-wrap: wrap; }
-  .contact-btn {
-    display: flex; align-items: center; gap: 8px; padding: 14px 20px; border-radius: 12px;
-    font-size: 14px; font-weight: 500; color: #fff; background: #141414;
-    border: 1px solid #252525; cursor: pointer; text-decoration: none;
-    transition: all 0.15s; font-family: 'Inter', sans-serif;
-  }
-  .contact-btn:hover { background: #1e1e1e; }
+  .contact-btn { display: flex; align-items: center; gap: 8px; padding: 14px 20px; border-radius: 12px; font-size: 14px; font-weight: 500; color: #fff; background: #141414; border: 1px solid #252525; cursor: pointer; text-decoration: none; transition: all 0.15s; font-family: 'Inter', sans-serif; }
+  .contact-btn:hover { background: #1e1e1e; border-color: #333; }
   .contact-btn.primary { background: #fff; color: #000; border-color: #fff; }
   .contact-btn.primary:hover { background: #e8e8e8; }
 
@@ -71,6 +62,7 @@
   .tab-content.active { display: block; }
 
   .notes-text { font-size: 16px; color: #aaa; line-height: 1.75; padding: 16px; background: #0d0d0d; border-radius: 12px; border-left: 3px solid #00d084; }
+  .empty-state { font-size: 14px; color: #333; padding: 20px; text-align: center; font-style: italic; }
 
   .email-item { padding: 14px 16px; background: #0d0d0d; border-radius: 12px; margin-bottom: 8px; border: 1px solid #1a1a1a; }
   .email-from { font-size: 12px; color: #555; margin-bottom: 4px; display: flex; justify-content: space-between; }
@@ -81,188 +73,461 @@
   .call-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
   .dot-in { background: #00d084; }
   .dot-out { background: #0a84ff; }
+  .dot-missed { background: #ff453a; }
   .call-dir { font-size: 13px; color: #555; width: 64px; }
   .call-dur { font-size: 15px; font-weight: 500; color: #fff; flex: 1; }
   .call-date { font-size: 12px; color: #444; }
 
   .right-col { display: flex; flex-direction: column; gap: 14px; }
   .ai-card, .pipe-card { background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 20px; padding: 1.5rem; }
-  .panel-title { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #444; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
-  .panel-title::after { content:''; flex:1; height:1px; background:#1a1a1a; }
-
-  .tip { margin-bottom: 18px; }
-  .tip:last-child { margin-bottom: 0; }
-  .tip-head { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 5px; }
-  .tip-body { font-size: 13px; color: #555; line-height: 1.6; }
-
   .panel-title { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #666; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
   .panel-title::after { content:''; flex:1; height:1px; background:#1a1a1a; }
 
-  .tip { margin-bottom: 20px; }
-  .tip:last-child { margin-bottom: 0; }
+  .tip { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #111; }
+  .tip:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
   .tip-head { font-size: 16px; font-weight: 600; color: #fff; margin-bottom: 6px; }
   .tip-body { font-size: 14px; color: #888; line-height: 1.65; }
+  .tip-loading { font-size: 13px; color: #333; font-style: italic; padding: 8px 0; }
 
   .pipe-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #111; }
   .pipe-row:last-child { border-bottom: none; }
   .pipe-stage { font-size: 14px; color: #888; width: 84px; }
   .pipe-track { flex: 1; height: 3px; background: #1a1a1a; border-radius: 2px; }
-  .pipe-fill { height: 3px; background: #fff; border-radius: 2px; }
+  .pipe-fill { height: 3px; background: #fff; border-radius: 2px; transition: width 0.6s ease; }
   .pipe-count { font-size: 24px; font-weight: 400; color: #fff; width: 28px; text-align: right; }
-  .deeper-btn {
-    width: 100%; margin-top: 14px; padding: 13px; border-radius: 10px;
-    font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
-    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
-    background: #141414; border: 1px solid #333; color: #888;
-    font-family: 'Inter', sans-serif; transition: all 0.2s;
-  }
+
+  .deeper-btn { width: 100%; margin-top: 14px; padding: 13px; border-radius: 10px; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; background: #141414; border: 1px solid #333; color: #888; font-family: 'Inter', sans-serif; transition: all 0.2s; }
   .deeper-btn:hover { background: #1e1e1e; color: #fff; border-color: #555; }
+
+  .modal-wrap { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 100; align-items: center; justify-content: center; }
+  .modal-wrap.open { display: flex; }
+  .modal { background: #0a0a0a; border: 1px solid #1a1a1a; border-top: 2px solid #00d084; border-radius: 20px; padding: 2rem; width: 560px; max-width: 92vw; max-height: 80vh; overflow-y: auto; }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
+  .modal-title { font-size: 24px; font-weight: 700; color: #fff; }
+  .modal-close { background: none; border: none; color: #444; font-size: 22px; cursor: pointer; padding: 4px; }
+  .modal-close:hover { color: #fff; }
+  .prep-block { background: #111; border-left: 3px solid #00d084; padding: 14px 16px; margin-bottom: 10px; border-radius: 0 8px 8px 0; }
+  .prep-block p { font-size: 14px; color: #999; line-height: 1.75; }
+  .prep-loading { font-size: 14px; color: #333; font-style: italic; padding: 2rem; text-align: center; }
 </style>
 </head>
 <body>
 
-  <div class="topbar">
-    <div>
-      <div class="brand">Recruitment</div>
-      <div class="topbar-date">Tuesday, July 1, 2025 · P&C Insurance</div>
-    </div>
-    <div class="stats-row">
-      <div class="stat"><div class="stat-val">4</div><div class="stat-label">Today</div></div>
-      <div class="stat"><div class="stat-val">34</div><div class="stat-label">Pipeline</div></div>
-      <div class="stat"><div class="stat-val">11</div><div class="stat-label">Open</div></div>
-      <div class="stat"><div class="stat-val">2</div><div class="stat-label">Placed</div></div>
-      <div class="sync-dot"></div>
+<div class="topbar">
+  <div>
+    <div class="brand" id="firm-name">Recruitment</div>
+    <div class="topbar-date" id="today-date">Loading…</div>
+  </div>
+  <div class="stats-row">
+    <div class="stat"><div class="stat-val" id="stat-today">—</div><div class="stat-label">Today</div></div>
+    <div class="stat"><div class="stat-val" id="stat-pipeline">—</div><div class="stat-label">Pipeline</div></div>
+    <div class="stat"><div class="stat-val" id="stat-open">—</div><div class="stat-label">Open</div></div>
+    <div class="stat"><div class="stat-val" id="stat-placed">—</div><div class="stat-label">Placed</div></div>
+    <div class="sync-dot loading" id="sync-dot"></div>
+  </div>
+</div>
+
+<div class="schedule-strip" id="schedule-strip">
+  <div class="sched-item active"><div class="sched-time">Loading…</div><div class="sched-name">—</div></div>
+</div>
+
+<div class="layout">
+  <div>
+    <div class="main-card" id="main-card">
+      <div class="cand-name" id="cand-name">Loading…</div>
+      <div class="cand-title" id="cand-title"></div>
+      <div class="cand-tags" id="cand-tags"></div>
+      <div class="contact-row" id="contact-row"></div>
+      <div class="info-row" id="info-row"></div>
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab(this,'tab-notes')">Notes</button>
+        <button class="tab" onclick="switchTab(this,'tab-emails')">Emails</button>
+        <button class="tab" onclick="switchTab(this,'tab-calls')">Calls</button>
+      </div>
+      <div id="tab-notes" class="tab-content active"><div class="notes-text" id="notes-text">Loading…</div></div>
+      <div id="tab-emails" class="tab-content"><div id="emails-list"></div></div>
+      <div id="tab-calls" class="tab-content"><div id="calls-list"></div></div>
     </div>
   </div>
 
-  <div class="schedule-strip">
-    <div class="sched-item done" onclick="selectSched(0)">
-      <div class="sched-time">9:00 AM</div>
-      <div class="sched-name">Sarah Chen</div>
-      <div class="sched-role">Claims Director</div>
+  <div class="right-col">
+    <div class="ai-card">
+      <div class="panel-title" id="prep-title">AI Prep</div>
+      <div id="prep-tips"><div class="tip-loading">Select a candidate to generate prep notes…</div></div>
+      <button class="deeper-btn" id="deeper-btn" style="display:none" onclick="openModal()">↗ Full prep notes</button>
     </div>
-    <div class="sched-item done" onclick="selectSched(1)">
-      <div class="sched-time">10:30 AM</div>
-      <div class="sched-name">Marcus Webb</div>
-      <div class="sched-role">Underwriting VP</div>
-    </div>
-    <div class="sched-item active" onclick="selectSched(2)">
-      <div class="sched-time"><span class="now-dot"></span>2:00 PM</div>
-      <div class="sched-name">Priya Nair</div>
-      <div class="sched-role">Actuary II</div>
-    </div>
-    <div class="sched-item" onclick="selectSched(3)">
-      <div class="sched-time">4:00 PM</div>
-      <div class="sched-name">James Torres</div>
-      <div class="sched-role">Loss Control Mgr</div>
+    <div class="pipe-card">
+      <div class="panel-title">Pipeline</div>
+      <div id="pipeline-rows"><div class="tip-loading">Loading…</div></div>
     </div>
   </div>
+</div>
 
-  <div class="layout">
-    <div>
-      <div class="main-card">
-        <div class="cand-name">Priya Nair</div>
-        <div class="cand-title">Associate Actuary II · Travelers Insurance</div>
-        <div class="cand-tags">
-          <span class="tag tag-now">▶ 2:00 PM Today</span>
-          <span class="tag tag-gray">FCAS Candidate</span>
-          <span class="tag tag-gray">8 yrs exp</span>
-        </div>
-
-        <div class="contact-row">
-          <a class="contact-btn primary" href="https://linkedin.com" target="_blank">↗ LinkedIn</a>
-          <a class="contact-btn" href="mailto:priya.nair@email.com">✉ priya.nair@email.com</a>
-          <a class="contact-btn" href="tel:6175550148">✆ (617) 555-0148</a>
-          <a class="contact-btn" href="https://zoom.us" target="_blank">⬛ Join Zoom</a>
-        </div>
-
-        <div class="info-row">
-          <div class="info-cell"><div class="info-label">Stage</div><div class="info-val">First Call</div></div>
-          <div class="info-cell"><div class="info-label">Compensation</div><div class="info-val">$135–155k</div></div>
-          <div class="info-cell"><div class="info-label">Format</div><div class="info-val">Zoom · 45 min</div></div>
-          <div class="info-cell"><div class="info-label">Location</div><div class="info-val">Hartford, CT</div></div>
-        </div>
-
-        <div class="tabs">
-          <button class="tab active" onclick="switchTab(this,'notes')">Notes</button>
-          <button class="tab" onclick="switchTab(this,'emails')">Emails</button>
-          <button class="tab" onclick="switchTab(this,'calls')">Calls</button>
-        </div>
-
-        <div id="notes" class="tab-content active">
-          <div class="notes-text">Strong personal auto reserving background. Currently studying for FCAS exam 8 this fall. Expressed strong interest in moving to a smaller carrier with more visibility into leadership decisions. Follow up on her exam timeline and comp expectations post-exam.</div>
-        </div>
-        <div id="emails" class="tab-content">
-          <div class="email-item">
-            <div class="email-from"><span>hiring.manager@hartford.com</span><span>Jun 28</span></div>
-            <div class="email-subj">Re: Priya Nair — Sr. Actuary role</div>
-            <div class="email-preview">We're very interested in moving forward. Budget has been approved…</div>
-          </div>
-          <div class="email-item">
-            <div class="email-from"><span>priya.nair@email.com</span><span>Jun 25</span></div>
-            <div class="email-subj">Following up on our conversation</div>
-            <div class="email-preview">Thank you for reaching out. I'd be open to learning more…</div>
-          </div>
-        </div>
-        <div id="calls" class="tab-content">
-          <div class="call-item">
-            <div class="call-dot dot-out"></div>
-            <span class="call-dir">Outbound</span>
-            <span class="call-dur">12m 34s</span>
-            <span class="call-date">Jun 24, 2:15 PM</span>
-          </div>
-          <div class="call-item">
-            <div class="call-dot dot-in"></div>
-            <span class="call-dir">Inbound</span>
-            <span class="call-dur">4m 10s</span>
-            <span class="call-date">Jun 20, 11:03 AM</span>
-          </div>
-        </div>
-      </div>
+<div class="modal-wrap" id="modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">Full Prep</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
-
-    <div class="right-col">
-      <div class="ai-card">
-        <div class="panel-title">AI Prep · Priya</div>
-        <div class="tip">
-          <div class="tip-head">Anchor comp now</div>
-          <div class="tip-body">If she passes FCAS exam 8 this fall her floor moves up. Get her number before that happens.</div>
-        </div>
-        <div class="tip">
-          <div class="tip-head">Lead with visibility</div>
-          <div class="tip-body">Personal auto reserving talent is scarce. Frame the role around leadership scope, not just salary.</div>
-        </div>
-        <div class="tip">
-          <div class="tip-head">Watch study support</div>
-          <div class="tip-body">Travelers offers strong FCAS benefits. Be ready with what the new role offers instead.</div>
-        </div>
-        <button class="deeper-btn">↗ Full prep notes</button>
-      </div>
-
-      <div class="pipe-card">
-        <div class="panel-title">Pipeline</div>
-        <div class="pipe-row"><span class="pipe-stage">Sourced</span><div class="pipe-track"><div class="pipe-fill" style="width:100%"></div></div><span class="pipe-count">14</span></div>
-        <div class="pipe-row"><span class="pipe-stage">First call</span><div class="pipe-track"><div class="pipe-fill" style="width:64%"></div></div><span class="pipe-count">9</span></div>
-        <div class="pipe-row"><span class="pipe-stage">Submitted</span><div class="pipe-track"><div class="pipe-fill" style="width:43%"></div></div><span class="pipe-count">6</span></div>
-        <div class="pipe-row"><span class="pipe-stage">Interviewing</span><div class="pipe-track"><div class="pipe-fill" style="width:29%"></div></div><span class="pipe-count">4</span></div>
-        <div class="pipe-row"><span class="pipe-stage">Placed</span><div class="pipe-track"><div class="pipe-fill" style="width:7%"></div></div><span class="pipe-count">1</span></div>
-      </div>
-    </div>
+    <div id="modal-body"><div class="prep-loading">Generating…</div></div>
   </div>
+</div>
 
 <script>
+// ── State ─────────────────────────────────────
+const state = {
+  meetings: [],
+  candidates: {},
+  emails: {},
+  calls: {},
+  pipeline: [],
+  selectedIdx: 0
+};
+
+// ── Helpers ───────────────────────────────────
+function today() {
+  return new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+}
+function fmtTime(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true });
+}
+function initials(name) {
+  return (name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+}
+function setSync(live) {
+  const dot = document.getElementById('sync-dot');
+  dot.className = 'sync-dot' + (live ? '' : ' loading');
+}
+
+// ── API calls to our server ───────────────────
+async function apiFetch(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// ── Load calendar ─────────────────────────────
+async function loadCalendar() {
+  try {
+    const data = await apiFetch('/api/calendar');
+    if (data.value && data.value.length) {
+      state.meetings = data.value.map(e => ({
+        title: e.subject || 'Meeting',
+        start: e.start?.dateTime,
+        attendees: (e.attendees||[]).map(a=>a.emailAddress?.name).filter(Boolean),
+        joinUrl: e.onlineMeeting?.joinUrl || null,
+        preview: e.bodyPreview || ''
+      }));
+      return;
+    }
+  } catch(e) { console.warn('Calendar:', e.message); }
+  useDemoMeetings();
+}
+
+// ── Load RecruiterFlow ────────────────────────
+async function loadCandidates() {
+  try {
+    const data = await apiFetch('/api/candidates');
+    const list = data.data || data.candidates || [];
+    if (list.length) {
+      list.forEach(c => {
+        const name = `${c.first_name||''} ${c.last_name||''}`.trim();
+        state.candidates[name] = {
+          name, title: c.current_title || c.job_title || '',
+          company: c.current_company || c.company || '',
+          email: c.email || '', phone: c.phone || c.mobile || '',
+          linkedin: c.linkedin_url || c.linkedin || '',
+          stage: c.stage || c.status || '',
+          notes: c.notes || c.description || '',
+          salary: c.salary || c.expected_salary || '',
+          tags: c.tags || []
+        };
+      });
+      const stages = {};
+      list.forEach(c => { const s = c.stage||c.status||'Unknown'; stages[s]=(stages[s]||0)+1; });
+      state.pipeline = Object.entries(stages).map(([s,n])=>({stage:s,count:n}));
+      document.getElementById('stat-pipeline').textContent = list.length;
+      const placed = state.pipeline.find(p=>p.stage.toLowerCase().includes('place'));
+      if (placed) document.getElementById('stat-placed').textContent = placed.count;
+      return;
+    }
+  } catch(e) { console.warn('RecruiterFlow:', e.message); }
+  useDemoCandidates();
+  useDemoPipeline();
+}
+
+// ── Load emails for a candidate ───────────────
+async function loadEmails(name) {
+  try {
+    const data = await apiFetch(`/api/emails?name=${encodeURIComponent(name)}`);
+    state.emails[name] = (data.value||[]).map(m=>({
+      subject: m.subject || '(no subject)',
+      from: m.from?.emailAddress?.name || m.from?.emailAddress?.address || 'Unknown',
+      date: m.receivedDateTime,
+      preview: m.bodyPreview || ''
+    }));
+  } catch(e) { state.emails[name] = []; }
+}
+
+// ── Load RingCentral calls ────────────────────
+async function loadCalls(name) {
+  try {
+    const data = await apiFetch('/api/calls');
+    const first = name.split(' ')[0].toLowerCase();
+    state.calls[name] = (data.records||[])
+      .filter(r => ((r.to?.name||'')+(r.from?.name||'')).toLowerCase().includes(first))
+      .map(r => ({ direction: r.direction, duration: r.duration, startTime: r.startTime, result: r.result }));
+  } catch(e) { state.calls[name] = []; }
+}
+
+// ── Demo fallbacks ────────────────────────────
+function useDemoMeetings() {
+  const b = new Date(); b.setHours(9,0,0,0);
+  const t = (h,m) => { const d=new Date(b); d.setHours(h,m); return d.toISOString(); };
+  state.meetings = [
+    { title:'Sarah Chen',   start:t(9,0),  attendees:['Sarah Chen'],   joinUrl:null },
+    { title:'Marcus Webb',  start:t(10,30),attendees:['Marcus Webb'],  joinUrl:null },
+    { title:'Priya Nair',   start:t(14,0), attendees:['Priya Nair'],   joinUrl:'https://zoom.us/j/demo' },
+    { title:'James Torres', start:t(16,0), attendees:['James Torres'], joinUrl:null }
+  ];
+}
+function useDemoCandidates() {
+  state.candidates = {
+    'Priya Nair':   { name:'Priya Nair',   title:'Associate Actuary II',company:'Travelers Insurance',email:'priya.nair@email.com',  phone:'(617) 555-0148',linkedin:'https://linkedin.com/in/priyanair',  stage:'First Call',  notes:'Strong personal auto reserving background. Studying for FCAS exam 8 this fall. Interested in moving to a smaller carrier with more visibility. Follow up on exam timeline and post-exam comp expectations.',salary:'$135–155k',tags:['FCAS Candidate','8 yrs exp'] },
+    'James Torres': { name:'James Torres', title:'Loss Control Manager', company:'Liberty Mutual',     email:'j.torres@email.com',    phone:'(312) 555-0293',linkedin:'https://linkedin.com/in/jamestorres',stage:'First Call',  notes:'Referred by Marcus Webb. CSP certified, heavy commercial property focus. Seeking Director-level move. Prefers Midwest, open to remote.',salary:'$120–140k',tags:['Commercial Lines','12 yrs exp'] },
+    'Sarah Chen':   { name:'Sarah Chen',   title:'Claims Director',      company:'Nationwide',         email:'s.chen@email.com',      phone:'(614) 555-0211',linkedin:'https://linkedin.com/in/sarahchen',  stage:'Submitted',   notes:'Strong claims leadership background. 15 years P&C. Very motivated to move.',salary:'$150–170k',tags:['Claims','15 yrs exp'] },
+    'Marcus Webb':  { name:'Marcus Webb',  title:'Underwriting VP',      company:'Chubb',              email:'m.webb@email.com',      phone:'(212) 555-0399',linkedin:'https://linkedin.com/in/marcuswebb', stage:'Interviewing',notes:'Senior underwriting leader. Commercial specialty focus. Strong references.',salary:'$175–200k',tags:['Underwriting','20 yrs exp'] }
+  };
+}
+function useDemoPipeline() {
+  state.pipeline = [
+    {stage:'Sourced',count:14},{stage:'First call',count:9},
+    {stage:'Submitted',count:6},{stage:'Interviewing',count:4},{stage:'Placed',count:1}
+  ];
+}
+
+// ── Render schedule strip ─────────────────────
+function renderSchedule() {
+  const now = new Date();
+  document.getElementById('today-date').textContent = today() + ' · P&C Insurance';
+  document.getElementById('stat-today').textContent = state.meetings.length;
+
+  const strip = document.getElementById('schedule-strip');
+  strip.innerHTML = state.meetings.map((m, i) => {
+    const mt = new Date(m.start);
+    const name = m.attendees?.[0] || m.title;
+    const done = mt < now && (now - mt) > 30*60000;
+    const isNow = !done && Math.abs(now - mt) < 90*60000;
+    const nowDot = isNow ? '<span class="now-dot"></span>' : '';
+    return `<div class="sched-item${i===state.selectedIdx?' active':''}${done?' done':''}" onclick="selectCandidate(${i})">
+      <div class="sched-time">${nowDot}${fmtTime(m.start)}</div>
+      <div class="sched-name">${name}</div>
+      <div class="sched-role">${(state.candidates[name]||{}).title||''}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Render main candidate card ────────────────
+function renderCard() {
+  const m = state.meetings[state.selectedIdx];
+  if (!m) return;
+  const now = new Date();
+  const mt = new Date(m.start);
+  const name = m.attendees?.[0] || m.title;
+  const c = state.candidates[name] || { name, title:'', company:'', email:'', phone:'', linkedin:'', stage:'', notes:'No notes on file.', salary:'', tags:[] };
+  const done = mt < now && (now - mt) > 30*60000;
+  const isNow = !done && Math.abs(now - mt) < 90*60000;
+
+  document.getElementById('cand-name').textContent = name;
+  document.getElementById('cand-title').textContent = [c.title, c.company].filter(Boolean).join(' · ');
+
+  // Tags
+  const timeTag = `<span class="tag tag-now">${isNow?'▶ ':done?'✓ ':''}${fmtTime(m.start)}</span>`;
+  const otherTags = (c.tags||[]).map(t=>`<span class="tag tag-gray">${t}</span>`).join('');
+  document.getElementById('cand-tags').innerHTML = timeTag + otherTags;
+
+  // Contact buttons
+  let btns = '';
+  if (c.linkedin) btns += `<a class="contact-btn primary" href="${c.linkedin}" target="_blank">↗ LinkedIn</a>`;
+  if (c.email)    btns += `<a class="contact-btn" href="mailto:${c.email}">✉ ${c.email}</a>`;
+  if (c.phone)    btns += `<a class="contact-btn" href="tel:${c.phone.replace(/\D/g,'')}">✆ ${c.phone}</a>`;
+  if (m.joinUrl)  btns += `<a class="contact-btn" href="${m.joinUrl}" target="_blank">⬛ Join Zoom</a>`;
+  btns += `<a class="contact-btn" href="https://app.recruiterflow.com" target="_blank">↗ RecruiterFlow</a>`;
+  document.getElementById('contact-row').innerHTML = btns;
+
+  // Info grid
+  document.getElementById('info-row').innerHTML = `
+    <div class="info-cell"><div class="info-label">Stage</div><div class="info-val">${c.stage||'—'}</div></div>
+    <div class="info-cell"><div class="info-label">Compensation</div><div class="info-val">${c.salary||'—'}</div></div>
+    <div class="info-cell"><div class="info-label">Meeting</div><div class="info-val">${fmtTime(m.start)}</div></div>
+    <div class="info-cell"><div class="info-label">Email</div><div class="info-val">${c.email||'—'}</div></div>`;
+
+  // Notes
+  document.getElementById('notes-text').textContent = c.notes || 'No notes on file.';
+
+  // Emails
+  const emails = state.emails[name] || [];
+  document.getElementById('emails-list').innerHTML = emails.length
+    ? emails.map(e=>`<div class="email-item">
+        <div class="email-from"><span>${e.from}</span><span>${e.date ? new Date(e.date).toLocaleDateString() : ''}</span></div>
+        <div class="email-subj">${e.subject}</div>
+        <div class="email-preview">${(e.preview||'').slice(0,140)}…</div>
+      </div>`).join('')
+    : '<div class="empty-state">No recent emails found</div>';
+
+  // Calls
+  const calls = state.calls[name] || [];
+  document.getElementById('calls-list').innerHTML = calls.length
+    ? calls.map(r => {
+        const dir = (r.direction||'').toLowerCase();
+        const dotCls = dir==='inbound'?'dot-in':dir==='outbound'?'dot-out':'dot-missed';
+        const mins = Math.floor((r.duration||0)/60);
+        const secs = (r.duration||0)%60;
+        return `<div class="call-item">
+          <div class="call-dot ${dotCls}"></div>
+          <span class="call-dir">${r.direction||'—'}</span>
+          <span class="call-dur">${mins}m ${secs}s${r.result?' · '+r.result:''}</span>
+          <span class="call-date">${r.startTime?new Date(r.startTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):''}</span>
+        </div>`;
+      }).join('')
+    : '<div class="empty-state">No calls logged today</div>';
+
+  // Reset tabs to Notes
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelector('.tab').classList.add('active');
+  document.getElementById('tab-notes').classList.add('active');
+}
+
+// ── Render pipeline ───────────────────────────
+function renderPipeline() {
+  if (!state.pipeline.length) return;
+  const max = Math.max(...state.pipeline.map(p=>p.count), 1);
+  document.getElementById('pipeline-rows').innerHTML = state.pipeline.map(p=>`
+    <div class="pipe-row">
+      <span class="pipe-stage">${p.stage}</span>
+      <div class="pipe-track"><div class="pipe-fill" style="width:${Math.round(p.count/max*100)}%"></div></div>
+      <span class="pipe-count">${p.count}</span>
+    </div>`).join('');
+}
+
+// ── AI Prep ───────────────────────────────────
+async function generatePrep() {
+  const m = state.meetings[state.selectedIdx];
+  if (!m) return;
+  const name = m.attendees?.[0] || m.title;
+  const c = state.candidates[name] || {};
+  const emails = (state.emails[name]||[]).map(e=>e.subject).join('; ') || 'none';
+  const calls = (state.calls[name]||[]).length;
+
+  document.getElementById('prep-title').textContent = `AI Prep · ${name.split(' ')[0]}`;
+  document.getElementById('prep-tips').innerHTML = '<div class="tip-loading">Generating prep notes…</div>';
+  document.getElementById('deeper-btn').style.display = 'none';
+
+  const context = `Candidate: ${name}\nTitle: ${c.title} at ${c.company}\nStage: ${c.stage}\nComp: ${c.salary}\nTags: ${(c.tags||[]).join(', ')}\nNotes: ${c.notes}\nRecent emails: ${emails}\nCalls today: ${calls}`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6', max_tokens: 800,
+        system: 'You are an expert P&C insurance recruiter assistant. Return ONLY a JSON array of exactly 3 objects with keys "head" (3-5 word title) and "body" (1-2 sentences, specific and actionable). No markdown, no preamble, raw JSON only.',
+        messages: [{ role:'user', content: context }]
+      })
+    });
+    const data = await res.json();
+    const text = (data.content||[]).map(b=>b.text||'').join('');
+    const tips = JSON.parse(text.replace(/```json|```/g,'').trim());
+    document.getElementById('prep-tips').innerHTML = tips.map(t=>`
+      <div class="tip">
+        <div class="tip-head">${t.head}</div>
+        <div class="tip-body">${t.body}</div>
+      </div>`).join('');
+    document.getElementById('deeper-btn').style.display = 'flex';
+  } catch(e) {
+    document.getElementById('prep-tips').innerHTML = `
+      <div class="tip"><div class="tip-head">Ready</div><div class="tip-body">Review the notes and call history before this conversation.</div></div>`;
+    document.getElementById('deeper-btn').style.display = 'flex';
+  }
+}
+
+// ── Select candidate ──────────────────────────
+function selectCandidate(idx) {
+  state.selectedIdx = idx;
+  renderSchedule();
+  renderCard();
+  generatePrep();
+}
+
+// ── Tabs ──────────────────────────────────────
 function switchTab(btn, id) {
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById(id).classList.add('active');
 }
-function selectSched(i) {
-  document.querySelectorAll('.sched-item').forEach((el,idx)=>{
-    el.classList.remove('active');
-    if(idx===i) el.classList.add('active');
-  });
+
+// ── Full prep modal ───────────────────────────
+async function openModal() {
+  document.getElementById('modal').classList.add('open');
+  const m = state.meetings[state.selectedIdx];
+  const name = m?.attendees?.[0] || m?.title || 'Candidate';
+  const c = state.candidates[name] || {};
+  document.getElementById('modal-title').textContent = `Full Prep · ${name}`;
+  document.getElementById('modal-body').innerHTML = '<div class="prep-loading">Generating detailed prep…</div>';
+
+  const context = `Candidate: ${name}\nTitle: ${c.title} at ${c.company}\nStage: ${c.stage}\nNotes: ${c.notes}\nEmails: ${(state.emails[name]||[]).map(e=>e.subject).join('; ')||'none'}`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6', max_tokens: 1200,
+        system: 'You are an expert P&C insurance recruiter coach. Write comprehensive call prep: opening approach, 3 key questions, likely objections and how to handle them, relevant P&C market context, and a suggested close. Be direct and specific. Use plain text with clear section headers separated by blank lines.',
+        messages: [{ role:'user', content: context }]
+      })
+    });
+    const data = await res.json();
+    const text = (data.content||[]).map(b=>b.text||'').join('');
+    document.getElementById('modal-body').innerHTML = text.split('\n\n').filter(Boolean)
+      .map(s=>`<div class="prep-block"><p>${s.replace(/\n/g,'<br>')}</p></div>`).join('');
+  } catch(e) {
+    document.getElementById('modal-body').innerHTML = '<div class="prep-block"><p>Could not generate. Check your connection and try again.</p></div>';
+  }
 }
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+
+// ── Main load ─────────────────────────────────
+async function loadAll() {
+  setSync(false);
+  document.getElementById('today-date').textContent = today() + ' · P&C Insurance';
+
+  await Promise.all([loadCalendar(), loadCandidates()]);
+
+  // Auto-select next upcoming meeting
+  const now = new Date();
+  const next = state.meetings.findIndex(m => new Date(m.start) >= now);
+  state.selectedIdx = next === -1 ? 0 : next;
+
+  document.getElementById('stat-open').textContent = '11';
+
+  renderSchedule();
+  renderPipeline();
+  renderCard();
+
+  // Load comms for all candidates in parallel, then re-render
+  const names = state.meetings.map(m => m.attendees?.[0] || m.title);
+  await Promise.all(names.flatMap(n => [loadEmails(n), loadCalls(n)]));
+  renderCard();
+
+  generatePrep();
+  setSync(true);
+}
+
+loadAll();
 </script>
 </body>
 </html>
