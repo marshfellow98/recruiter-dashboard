@@ -95,7 +95,6 @@ async function getRCToken() {
 
 async function handleAPI(pathname, query) {
 
-  // Today's calendar
   if (pathname === '/api/calendar') {
     const token = await getMSToken();
     const today = new Date().toISOString().split('T')[0];
@@ -108,7 +107,6 @@ async function handleAPI(pathname, query) {
     return res.body;
   }
 
-  // Tomorrow's calendar
   if (pathname === '/api/calendar/tomorrow') {
     const token = await getMSToken();
     const tomorrow = new Date();
@@ -123,7 +121,6 @@ async function handleAPI(pathname, query) {
     return res.body;
   }
 
-  // Emails for candidate
   if (pathname === '/api/emails') {
     const token = await getMSToken();
     const name = query.name || '';
@@ -136,7 +133,6 @@ async function handleAPI(pathname, query) {
     return res.body;
   }
 
-  // RecruiterFlow candidates
   if (pathname === '/api/candidates') {
     const res = await fetchJSON({
       hostname: 'api.recruiterflow.com',
@@ -147,7 +143,6 @@ async function handleAPI(pathname, query) {
     return res.body;
   }
 
-  // RingCentral call log
   if (pathname === '/api/calls') {
     const token = await getRCToken();
     const today = new Date().toISOString().split('T')[0];
@@ -160,7 +155,6 @@ async function handleAPI(pathname, query) {
     return res.body;
   }
 
-  // Zoom meetings
   if (pathname === '/api/zoom') {
     const token = await getZoomToken();
     const res = await fetchJSON({
@@ -172,10 +166,9 @@ async function handleAPI(pathname, query) {
     return res.body;
   }
 
-  return { error: 'Not found' };
+  return null;
 }
 
-// ── Claude AI proxy (fixes CORS for AI prep) ─────────────
 async function handleAIProxy(reqBody) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(reqBody);
@@ -202,7 +195,6 @@ async function handleAIProxy(reqBody) {
   });
 }
 
-// ── Read request body ─────────────────────────────────────
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -212,11 +204,12 @@ function readBody(req) {
   });
 }
 
-// ── HTTP Server ───────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const parsed = url.parse(req.url, true);
   const pathname = parsed.pathname;
   const query = parsed.query;
+
+  console.log(`${req.method} ${pathname}`);
 
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -224,16 +217,21 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
 
-  // Serve dashboard
   if (pathname === '/' || pathname === '/index.html') {
-    const html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(html);
+    try {
+      const html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(html);
+    } catch(e) {
+      console.error('Could not read index.html:', e.message);
+      res.writeHead(500);
+      res.end('Could not load dashboard: ' + e.message);
+    }
     return;
   }
 
-  // AI proxy — POST /api/ai
   if (pathname === '/api/ai' && req.method === 'POST') {
+    console.log('AI proxy called');
     try {
       const body = await readBody(req);
       const data = await handleAIProxy(body);
@@ -247,12 +245,22 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // All other API routes
+  if (pathname === '/api/ai') {
+    res.writeHead(405, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Method Not Allowed - use POST' }));
+    return;
+  }
+
   if (pathname.startsWith('/api/')) {
     try {
       const data = await handleAPI(pathname, query);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(data));
+      if (data === null) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'API route not found' }));
+      } else {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(data));
+      }
     } catch(e) {
       console.error(`API error [${pathname}]:`, e.message);
       res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -267,5 +275,6 @@ const server = http.createServer(async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`\n✦ Recruiter Dashboard running on port ${PORT}\n`);
+  console.log(`\n✦ Recruiter Dashboard v3 running on port ${PORT}`);
+  console.log('Routes: GET /, GET /api/calendar, GET /api/calendar/tomorrow, GET /api/emails, GET /api/candidates, GET /api/calls, GET /api/zoom, POST /api/ai\n');
 });
