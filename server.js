@@ -179,7 +179,8 @@ async function handleAIProxy(reqBody) {
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(payload),
-        'anthropic-version': '2023-06-01'
+        'anthropic-version': '2023-06-01',
+        'x-api-key': process.env.ANTHROPIC_API_KEY
       }
     }, res => {
       let data = '';
