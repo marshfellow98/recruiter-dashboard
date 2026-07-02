@@ -4,11 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 
-// ── Credentials from environment variables (set in Railway dashboard) ──
 const CONFIG = {
-  recruiterflow: {
-    apiKey: process.env.RECRUITERFLOW_API_KEY
-  },
+  recruiterflow: { apiKey: process.env.RECRUITERFLOW_API_KEY },
   msGraph: {
     tenantId: process.env.MS_TENANT_ID,
     clientId: process.env.MS_CLIENT_ID,
@@ -25,10 +22,8 @@ const CONFIG = {
   }
 };
 
-// ── Token cache ──────────────────────────────────────────
 const tokens = { ms: null, zoom: null, rc: null };
 
-// ── HTTPS fetch helper ───────────────────────────────────
 function fetchJSON(options, body) {
   return new Promise((resolve, reject) => {
     const req = https.request(options, res => {
@@ -46,12 +41,9 @@ function fetchJSON(options, body) {
 }
 
 function encodeForm(obj) {
-  return Object.entries(obj)
-    .map(([k,v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-    .join('&');
+  return Object.entries(obj).map(([k,v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
 }
 
-// ── MS Graph token ───────────────────────────────────────
 async function getMSToken() {
   if (tokens.ms) return tokens.ms;
   const body = encodeForm({
@@ -64,16 +56,12 @@ async function getMSToken() {
     hostname: 'login.microsoftonline.com',
     path: `/${CONFIG.msGraph.tenantId}/oauth2/v2.0/token`,
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Content-Length': Buffer.byteLength(body)
-    }
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
   }, body);
   tokens.ms = res.body.access_token;
   return tokens.ms;
 }
 
-// ── Zoom token ───────────────────────────────────────────
 async function getZoomToken() {
   if (tokens.zoom) return tokens.zoom;
   const creds = Buffer.from(`${CONFIG.zoom.clientId}:${CONFIG.zoom.clientSecret}`).toString('base64');
@@ -87,7 +75,6 @@ async function getZoomToken() {
   return tokens.zoom;
 }
 
-// ── RingCentral token ────────────────────────────────────
 async function getRCToken() {
   if (tokens.rc) return tokens.rc;
   const creds = Buffer.from(`${CONFIG.ringcentral.clientId}:${CONFIG.ringcentral.clientSecret}`).toString('base64');
@@ -106,9 +93,9 @@ async function getRCToken() {
   return tokens.rc;
 }
 
-// ── API route handlers ───────────────────────────────────
 async function handleAPI(pathname, query) {
 
+  // Today's calendar
   if (pathname === '/api/calendar') {
     const token = await getMSToken();
     const today = new Date().toISOString().split('T')[0];
@@ -121,6 +108,22 @@ async function handleAPI(pathname, query) {
     return res.body;
   }
 
+  // Tomorrow's calendar
+  if (pathname === '/api/calendar/tomorrow') {
+    const token = await getMSToken();
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tDate = tomorrow.toISOString().split('T')[0];
+    const res = await fetchJSON({
+      hostname: 'graph.microsoft.com',
+      path: `/v1.0/me/calendarView?startDateTime=${tDate}T00:00:00Z&endDateTime=${tDate}T23:59:59Z&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=20`,
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    return res.body;
+  }
+
+  // Emails for candidate
   if (pathname === '/api/emails') {
     const token = await getMSToken();
     const name = query.name || '';
@@ -133,6 +136,7 @@ async function handleAPI(pathname, query) {
     return res.body;
   }
 
+  // RecruiterFlow candidates
   if (pathname === '/api/candidates') {
     const res = await fetchJSON({
       hostname: 'api.recruiterflow.com',
@@ -143,6 +147,7 @@ async function handleAPI(pathname, query) {
     return res.body;
   }
 
+  // RingCentral call log
   if (pathname === '/api/calls') {
     const token = await getRCToken();
     const today = new Date().toISOString().split('T')[0];
@@ -155,6 +160,7 @@ async function handleAPI(pathname, query) {
     return res.body;
   }
 
+  // Zoom meetings
   if (pathname === '/api/zoom') {
     const token = await getZoomToken();
     const res = await fetchJSON({
@@ -169,7 +175,44 @@ async function handleAPI(pathname, query) {
   return { error: 'Not found' };
 }
 
-// ── HTTP Server ──────────────────────────────────────────
+// ── Claude AI proxy (fixes CORS for AI prep) ─────────────
+async function handleAIProxy(reqBody) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(reqBody);
+    const req = https.request({
+      hostname: 'api.anthropic.com',
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        'anthropic-version': '2023-06-01'
+      }
+    }, res => {
+      let data = '';
+      res.on('data', d => data += d);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch(e) { resolve({ error: 'Parse error' }); }
+      });
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+// ── Read request body ─────────────────────────────────────
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => { try { resolve(JSON.parse(body)); } catch(e) { resolve({}); } });
+    req.on('error', reject);
+  });
+}
+
+// ── HTTP Server ───────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const parsed = url.parse(req.url, true);
   const pathname = parsed.pathname;
@@ -181,6 +224,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
 
+  // Serve dashboard
   if (pathname === '/' || pathname === '/index.html') {
     const html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
     res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -188,6 +232,22 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // AI proxy — POST /api/ai
+  if (pathname === '/api/ai' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const data = await handleAIProxy(body);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(data));
+    } catch(e) {
+      console.error('AI proxy error:', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // All other API routes
   if (pathname.startsWith('/api/')) {
     try {
       const data = await handleAPI(pathname, query);
