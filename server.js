@@ -45,6 +45,11 @@ function encodeForm(obj) {
 }
 
 async function getMSToken() {
+  // Clear cached token if expired (50 min expiry)
+  if (tokens.msExpiry && Date.now() > tokens.msExpiry) {
+    tokens.ms = null;
+    tokens.msExpiry = null;
+  }
   if (tokens.ms) return tokens.ms;
   const body = encodeForm({
     grant_type: 'client_credentials',
@@ -58,7 +63,13 @@ async function getMSToken() {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
   }, body);
-  tokens.ms = res.body.access_token;
+  if (res.body.access_token) {
+    tokens.ms = res.body.access_token;
+    tokens.msExpiry = Date.now() + (50 * 60 * 1000); // 50 minutes
+    console.log('MS token acquired successfully');
+  } else {
+    console.error('MS token error:', JSON.stringify(res.body));
+  }
   return tokens.ms;
 }
 
