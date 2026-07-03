@@ -117,7 +117,7 @@ async function handleAPI(pathname, query) {
     const today = new Date().toISOString().split('T')[0];
     const res = await fetchJSON({
       hostname: 'graph.microsoft.com',
-      path: `/v1.0/me/calendarView?startDateTime=${today}T00:00:00Z&endDateTime=${today}T23:59:59Z&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=20`,
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${today}T00:00:00Z&endDateTime=${today}T23:59:59Z&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=20`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -131,7 +131,7 @@ async function handleAPI(pathname, query) {
     const tDate = tomorrow.toISOString().split('T')[0];
     const res = await fetchJSON({
       hostname: 'graph.microsoft.com',
-      path: `/v1.0/me/calendarView?startDateTime=${tDate}T00:00:00Z&endDateTime=${tDate}T23:59:59Z&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=20`,
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${tDate}T00:00:00Z&endDateTime=${tDate}T23:59:59Z&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=20`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -143,7 +143,7 @@ async function handleAPI(pathname, query) {
     const name = query.name || '';
     const res = await fetchJSON({
       hostname: 'graph.microsoft.com',
-      path: `/v1.0/me/messages?$search="${encodeURIComponent(name)}"&$select=subject,from,receivedDateTime,bodyPreview&$top=5`,
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$search="${encodeURIComponent(name)}"&$select=subject,from,receivedDateTime,bodyPreview&$top=5`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
