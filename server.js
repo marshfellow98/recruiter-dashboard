@@ -95,6 +95,23 @@ async function getRCToken() {
 
 async function handleAPI(pathname, query) {
 
+  // Debug MS token
+  if (pathname === '/api/debug/mstoken') {
+    const body = encodeForm({
+      grant_type: 'client_credentials',
+      client_id: CONFIG.msGraph.clientId,
+      client_secret: CONFIG.msGraph.clientSecret,
+      scope: 'https://graph.microsoft.com/.default'
+    });
+    const res = await fetchJSON({
+      hostname: 'login.microsoftonline.com',
+      path: `/${CONFIG.msGraph.tenantId}/oauth2/v2.0/token`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
+    }, body);
+    return { status: res.status, body: res.body };
+  }
+
   if (pathname === '/api/calendar') {
     const token = await getMSToken();
     const today = new Date().toISOString().split('T')[0];
