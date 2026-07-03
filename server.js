@@ -17,8 +17,8 @@ const CONFIG = {
     clientSecret: process.env.ZOOM_CLIENT_SECRET
   },
   ringcentral: {
-    clientId: process.env.RC_CLIENT_ID,
-    clientSecret: process.env.RC_CLIENT_SECRET
+    clientId: process.env.RC_CLIENT_ID_NEW || process.env.RC_CLIENT_ID,
+    clientSecret: process.env.RC_CLIENT_SECRET_NEW || process.env.RC_CLIENT_SECRET
   }
 };
 
@@ -88,12 +88,10 @@ async function getZoomToken() {
 
 async function getRCToken() {
   if (tokens.rc) return tokens.rc;
-  const creds = Buffer.from(`${CONFIG.ringcentral.clientId}:${CONFIG.ringcentral.clientSecret}`).toString('base64');
+  const creds = Buffer.from(`${process.env.RC_CLIENT_ID}:${process.env.RC_CLIENT_SECRET}`).toString('base64');
   const body = encodeForm({
-    grant_type: 'password',
-    username: process.env.RC_USERNAME,
-    password: process.env.RC_PASSWORD,
-    extension: ''
+    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    assertion: process.env.RC_JWT
   });
   const res = await fetchJSON({
     hostname: 'platform.ringcentral.com',
