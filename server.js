@@ -22,7 +22,7 @@ const CONFIG = {
   }
 };
 
-const tokens = { ms: null, zoom: null, rc: null };
+const tokens = { ms: null, zoom: null, rc: null, msExpiry: null };
 
 function fetchJSON(options, body) {
   return new Promise((resolve, reject) => {
@@ -160,7 +160,7 @@ async function handleAPI(pathname, query) {
   if (pathname === '/api/candidates') {
     const res = await fetchJSON({
       hostname: 'recruiterflow.com',
-      path: '/api/external/candidate/list?items_per_page=50&current_page=1',
+      path: '/api/integrations/feed/power-bi/candidates?items_per_page=100&current_page=1',
       method: 'GET',
       headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
     });
