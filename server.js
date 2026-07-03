@@ -87,8 +87,10 @@ async function getZoomToken() {
 }
 
 async function getRCToken() {
+  // Use JWT directly as bearer token
+  if (process.env.RC_JWT) return process.env.RC_JWT;
   if (tokens.rc) return tokens.rc;
-  const creds = Buffer.from(`${process.env.RC_CLIENT_ID}:${process.env.RC_CLIENT_SECRET}`).toString('base64');
+  const creds = Buffer.from(`${process.env.RC_CLIENT_ID_NEW || process.env.RC_CLIENT_ID}:${process.env.RC_CLIENT_SECRET_NEW || process.env.RC_CLIENT_SECRET}`).toString('base64');
   const body = encodeForm({
     grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
     assertion: process.env.RC_JWT
@@ -110,22 +112,6 @@ async function getRCToken() {
 async function handleAPI(pathname, query) {
 
   // Debug MS token
-  if (pathname === '/api/debug/mstoken') {
-    const body = encodeForm({
-      grant_type: 'client_credentials',
-      client_id: CONFIG.msGraph.clientId,
-      client_secret: CONFIG.msGraph.clientSecret,
-      scope: 'https://graph.microsoft.com/.default'
-    });
-    const res = await fetchJSON({
-      hostname: 'login.microsoftonline.com',
-      path: `/${CONFIG.msGraph.tenantId}/oauth2/v2.0/token`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
-    }, body);
-    return { status: res.status, body: res.body };
-  }
-
   if (pathname === '/api/calendar') {
     const token = await getMSToken();
     // Wide window covering full day in Central Time regardless of server UTC offset
