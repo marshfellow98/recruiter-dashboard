@@ -210,7 +210,7 @@ function fmtDate(date) {
 }
 function fmtTime(iso) {
   if (!iso) return '';
-  return new Date(iso).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true });
+  return new Date(iso).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:'America/Chicago' });
 }
 function setSync(live) {
   const dot = document.getElementById('sync-dot');
