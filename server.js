@@ -125,17 +125,19 @@ async function handleAPI(pathname, query) {
 
   if (pathname === '/api/calendar') {
     const token = await getMSToken();
-    // Use Central Time (UTC-5) - shift by 5 hours so "today" matches Dallas calendar
+    // Wide window covering full day in Central Time regardless of server UTC offset
     const now = new Date();
     const centralOffset = 5 * 60 * 60 * 1000;
     const centralNow = new Date(now.getTime() - centralOffset);
     const today = centralNow.toISOString().split('T')[0];
+    console.log('Fetching calendar for date:', today);
     const res = await fetchJSON({
       hostname: 'graph.microsoft.com',
-      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${today}T05:00:00Z&endDateTime=${today}T23:59:59Z&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=20`,
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${today}T00:00:00Z&endDateTime=${today}T23:59:59Z&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=20`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
+    console.log('Calendar response status:', res.status, 'items:', res.body?.value?.length);
     return res.body;
   }
 
