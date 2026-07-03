@@ -136,7 +136,7 @@ async function handleAPI(pathname, query) {
   if (pathname === '/api/candidates') {
     const res = await fetchJSON({
       hostname: 'recruiterflow.com',
-      path: '/api/external/candidate/list?items_per_page=50',
+      path: '/api/external/candidate/list?items_per_page=50&current_page=1',
       method: 'GET',
       headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
     });
