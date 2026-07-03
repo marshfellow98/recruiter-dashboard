@@ -89,7 +89,12 @@ async function getZoomToken() {
 async function getRCToken() {
   if (tokens.rc) return tokens.rc;
   const creds = Buffer.from(`${CONFIG.ringcentral.clientId}:${CONFIG.ringcentral.clientSecret}`).toString('base64');
-  const body = encodeForm({ grant_type: 'client_credentials' });
+  const body = encodeForm({
+    grant_type: 'password',
+    username: process.env.RC_USERNAME,
+    password: process.env.RC_PASSWORD,
+    extension: ''
+  });
   const res = await fetchJSON({
     hostname: 'platform.ringcentral.com',
     path: '/restapi/oauth/token',
