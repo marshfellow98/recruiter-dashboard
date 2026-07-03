@@ -210,7 +210,10 @@ function fmtDate(date) {
 }
 function fmtTime(iso) {
   if (!iso) return '';
-  return new Date(iso).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true,  });
+  // Microsoft Graph returns times without Z suffix but they are UTC
+  // Add Z if missing to ensure correct UTC parsing
+  const utcIso = iso.endsWith('Z') ? iso : iso + 'Z';
+  return new Date(utcIso).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true });
 }
 function setSync(live) {
   const dot = document.getElementById('sync-dot');
