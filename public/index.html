@@ -512,19 +512,24 @@ async function generatePrep() {
   document.getElementById('prep-tips').innerHTML = '<div class="tip-loading">Generating prep notes…</div>';
   document.getElementById('deeper-btn').style.display = 'none';
 
+  const emailContext = (state.emails[name]||[]).slice(0,3)
+    .map(e=>`- "${e.subject}" from ${e.from}: ${(e.preview||'').slice(0,200)}`)
+    .join('\n') || 'none';
+
   const context = `Candidate: ${name}
 Title: ${c.title} at ${c.company}
 Stage: ${c.stage}
 Comp: ${c.salary}
 Tags: ${(c.tags||[]).join(', ')}
 Notes: ${c.notes}
-Recent emails: ${(state.emails[name]||[]).map(e=>e.subject).join('; ')||'none'}
+Recent emails:
+${emailContext}
 Calls logged: ${(state.calls[name]||[]).length}
 ${isTomorrow?'This call is TOMORROW — focus on advance preparation.':''}`;
 
   try {
     const text = await aiCall(
-      'You are an expert P&C insurance recruiter assistant. Return ONLY a JSON array of exactly 3 objects with keys "head" (3-5 word title) and "body" (1-2 sentences, specific and actionable). No markdown, no preamble, raw JSON only.',
+      'You are an expert P&C insurance recruiter assistant. Read the email content carefully for both business details (compensation, timelines, competing offers, decision blockers) and personal details (family, travel, life events) that would help build rapport or inform strategy. Return ONLY a JSON array of exactly 3 objects with keys "head" (3-5 word title) and "body" (1-2 sentences, specific and actionable). Prioritize insights drawn directly from the email content when available. No markdown, no preamble, raw JSON only.',
       context
     );
     const tips = JSON.parse(text.replace(/```json|```/g,'').trim());
