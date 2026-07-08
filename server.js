@@ -162,7 +162,7 @@ async function handleAPI(pathname, query) {
   if (pathname === '/api/candidates') {
     const res = await fetchJSON({
       hostname: 'recruiterflow.com',
-      path: '/api/integrations/feed/power-bi/candidates?items_per_page=100&current_page=1',
+      path: '/api/external/candidate/list?current_page=1&items_per_page=100',
       method: 'GET',
       headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
     });
