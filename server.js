@@ -152,7 +152,7 @@ async function handleAPI(pathname, query) {
     const name = query.name || '';
     const res = await fetchJSON({
       hostname: 'graph.microsoft.com',
-      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$search="${encodeURIComponent(name)}"&$select=subject,from,receivedDateTime,bodyPreview&$top=5`,
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$search="${encodeURIComponent(name)}"&$select=subject,from,receivedDateTime,bodyPreview,webLink&$top=5`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
