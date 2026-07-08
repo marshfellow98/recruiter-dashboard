@@ -111,6 +111,39 @@ async function getRCToken() {
 
 async function handleAPI(pathname, query) {
 
+  // Debug RC token
+  if (pathname === '/api/debug/rctoken') {
+    const clientId = process.env.RC_CLIENT_ID_NEW || process.env.RC_CLIENT_ID;
+    const clientSecret = process.env.RC_CLIENT_SECRET_NEW || process.env.RC_CLIENT_SECRET;
+    const jwt = process.env.RC_JWT || '';
+    const creds = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const body = encodeForm({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt
+    });
+    const res = await fetchJSON({
+      hostname: 'platform.ringcentral.com',
+      path: '/restapi/oauth/token',
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${creds}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    }, body);
+    return {
+      status: res.status,
+      body: res.body,
+      debug: {
+        clientIdUsed: clientId,
+        clientIdLength: clientId?.length,
+        jwtLength: jwt.length,
+        jwtStart: jwt.slice(0, 20),
+        jwtEnd: jwt.slice(-20)
+      }
+    };
+  }
+
   // Debug MS token
   if (pathname === '/api/calendar') {
     const token = await getMSToken();
