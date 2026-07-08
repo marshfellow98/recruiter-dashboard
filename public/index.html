@@ -334,9 +334,19 @@ async function loadEmails(name) {
 async function loadCalls(name) {
   try {
     const data = await apiFetch('/api/calls');
+    const candidate = state.candidates[name];
+    const candidatePhone = candidate?.phone ? candidate.phone.replace(/\D/g,'').slice(-10) : '';
     const first = name.split(' ')[0].toLowerCase();
     state.calls[name] = (data.records||[])
-      .filter(r=>((r.to?.name||'')+(r.from?.name||'')).toLowerCase().includes(first))
+      .filter(r => {
+        const toPhone = (r.to?.phoneNumber||'').replace(/\D/g,'').slice(-10);
+        const fromPhone = (r.from?.phoneNumber||'').replace(/\D/g,'').slice(-10);
+        const toName = (r.to?.name||'').toLowerCase();
+        const fromName = (r.from?.name||'').toLowerCase();
+        // Match by phone number (most reliable) or by name containing candidate's first name
+        return (candidatePhone && (toPhone === candidatePhone || fromPhone === candidatePhone))
+          || toName.includes(first) || fromName.includes(first);
+      })
       .map(r=>({ direction:r.direction, duration:r.duration, startTime:r.startTime, result:r.result }));
   } catch(e) { state.calls[name]=[]; }
 }
