@@ -280,23 +280,34 @@ function mapMeeting(e) {
 async function loadCandidates() {
   try {
     const data = await apiFetch('/api/candidates');
-    const list = data.data || data.candidates || [];
+    // RecruiterFlow returns a raw array directly, not wrapped in data/candidates key
+    const list = Array.isArray(data) ? data : (data.data || data.candidates || []);
     if (list.length) {
       list.forEach(c => {
         const name = `${c.first_name||''} ${c.last_name||''}`.trim();
+        const emailArr = Array.isArray(c.email) ? c.email : (c.email ? [c.email] : []);
+        const phoneArr = Array.isArray(c.phone_number) ? c.phone_number : (c.phone_number ? [c.phone_number] : []);
+        // Notes: RecruiterFlow stores rich note history; use candidate_summary as fallback readable note
+        const noteText = (Array.isArray(c.notes) && c.notes.length)
+          ? c.notes.map(n => n.text || n.note || '').filter(Boolean).join(' | ')
+          : (c.candidate_summary ? c.candidate_summary.replace(/<[^>]*>/g,'').trim() : '');
+        // Stage comes from jobs[].stage_name if present
+        const stage = (c.jobs && c.jobs[0] && c.jobs[0].stage_name) || '';
         state.candidates[name] = {
-          name, title: c.current_title||c.job_title||'',
-          company: c.current_company||c.company||'',
-          email: c.email||'', phone: c.phone||c.mobile||'',
-          linkedin: c.linkedin_url||c.linkedin||'',
-          stage: c.stage||c.status||'',
-          notes: c.notes||c.description||'',
-          salary: c.salary||c.expected_salary||'',
-          tags: c.tags||[]
+          name,
+          title: c.current_designation || c.current_title || '',
+          company: c.current_organization || c.current_company || '',
+          email: emailArr[0] || '',
+          phone: phoneArr[0] || '',
+          linkedin: c.linkedin_profile ? `https://linkedin.com/in/${c.linkedin_profile}` : (c.linkedin_url || ''),
+          stage: stage || c.status || '',
+          notes: noteText || 'No notes on file.',
+          salary: c.salary || c.expected_salary || '',
+          tags: c.tags || []
         };
       });
       const stages = {};
-      list.forEach(c=>{ const s=c.stage||c.status||'Unknown'; stages[s]=(stages[s]||0)+1; });
+      list.forEach(c=>{ const s=(c.jobs && c.jobs[0] && c.jobs[0].stage_name) || 'Sourced'; stages[s]=(stages[s]||0)+1; });
       state.pipeline = Object.entries(stages).map(([s,n])=>({stage:s,count:n}));
       document.getElementById('stat-pipeline').textContent = list.length;
       const placed = state.pipeline.find(p=>p.stage.toLowerCase().includes('place'));
