@@ -161,11 +161,14 @@
       <div class="contact-row" id="contact-row"></div>
       <div class="info-row" id="info-row"></div>
       <div class="tabs">
-        <button class="tab active" onclick="switchTab(this,'tab-notes')">Notes</button>
+        <button class="tab active" onclick="switchTab(this,'tab-notes')">Activity</button>
         <button class="tab" onclick="switchTab(this,'tab-emails')">Emails</button>
         <button class="tab" onclick="switchTab(this,'tab-calls')">Calls</button>
       </div>
-      <div id="tab-notes" class="tab-content active"><div class="notes-text" id="notes-text">Loading…</div></div>
+      <div id="tab-notes" class="tab-content active">
+        <div style="font-size:11px;color:#444;margin-bottom:10px;letter-spacing:0.05em;">FROM RECRUITERFLOW TASKS &amp; ACTIVITY LOG</div>
+        <div class="notes-text" id="notes-text">Loading…</div>
+      </div>
       <div id="tab-emails" class="tab-content"><div id="emails-list"></div></div>
       <div id="tab-calls" class="tab-content"><div id="calls-list"></div></div>
     </div>
@@ -493,7 +496,7 @@ function renderCard() {
     <div class="info-cell"><div class="info-label">Meeting</div><div class="info-val">${fmtTime(m.start)}</div></div>
     <div class="info-cell"><div class="info-label">Source</div><div class="info-val">${c.source||'—'}</div></div>`;
 
-  document.getElementById('notes-text').textContent = c.notes || 'No notes on file.';
+  document.getElementById('notes-text').textContent = c.notes || 'No tasks or activity logged yet. Log post-call notes as a Task in RecruiterFlow to see them here.';
 
   const emails = state.emails[name]||[];
   document.getElementById('emails-list').innerHTML = emails.length
