@@ -204,7 +204,10 @@ async function handleAPI(pathname, query) {
       hostname: 'graph.microsoft.com',
       path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$search="${encodeURIComponent(name)}"&$select=subject,from,receivedDateTime,bodyPreview,webLink&$top=5`,
       method: 'GET',
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'ConsistencyLevel': 'eventual'
+      }
     });
     return res.body;
   }
