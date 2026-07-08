@@ -116,6 +116,18 @@ async function getRCToken() {
 
 async function handleAPI(pathname, query) {
 
+  // Debug single candidate detail
+  if (pathname === '/api/debug/candidate') {
+    const id = query.id || '31211';
+    const res = await fetchJSON({
+      hostname: 'recruiterflow.com',
+      path: `/api/external/candidate/${id}`,
+      method: 'GET',
+      headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
+    });
+    return { status: res.status, body: res.body };
+  }
+
   // Debug RC token
   if (pathname === '/api/debug/rctoken') {
     const clientId = process.env.RC_CLIENT_ID_NEW || process.env.RC_CLIENT_ID;
