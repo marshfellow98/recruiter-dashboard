@@ -314,7 +314,8 @@ async function loadEmails(name) {
     state.emails[name] = (data.value||[]).map(m=>({
       subject: m.subject||'(no subject)',
       from: m.from?.emailAddress?.name||m.from?.emailAddress?.address||'Unknown',
-      date: m.receivedDateTime, preview: m.bodyPreview||''
+      date: m.receivedDateTime, preview: m.bodyPreview||'',
+      webLink: m.webLink||null
     }));
   } catch(e) { state.emails[name] = []; }
 }
@@ -469,10 +470,11 @@ function renderCard() {
 
   const emails = state.emails[name]||[];
   document.getElementById('emails-list').innerHTML = emails.length
-    ? emails.map(e=>`<div class="email-item">
+    ? emails.map(e=>`<div class="email-item" ${e.webLink?`onclick="window.open('${e.webLink}','_blank')" style="cursor:pointer"`:''}> 
         <div class="email-from"><span>${e.from}</span><span>${e.date?new Date(e.date).toLocaleDateString():''}</span></div>
         <div class="email-subj">${e.subject}</div>
         <div class="email-preview">${(e.preview||'').slice(0,140)}…</div>
+        ${e.webLink?'<div style="font-size:11px;color:#555;margin-top:6px;">↗ Open in Outlook</div>':''}
       </div>`).join('')
     : '<div class="empty-state">No recent emails found</div>';
 
