@@ -137,6 +137,7 @@
     <div class="stat"><div class="stat-val" id="stat-open">—</div><div class="stat-label">Open</div></div>
     <div class="stat"><div class="stat-val" id="stat-placed">—</div><div class="stat-label">Placed</div></div>
     <div class="sync-dot loading" id="sync-dot"></div>
+    <button onclick="loadAll()" style="background:#141414;border:1px solid #252525;color:#666;border-radius:8px;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:0.05em;cursor:pointer;font-family:'Inter',sans-serif;">↻ Refresh</button>
   </div>
 </div>
 
@@ -227,10 +228,17 @@ function activeMeetings() {
 }
 
 // ── API calls ─────────────────────────────────
-async function apiFetch(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+async function apiFetch(path, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch(e) {
+      if (attempt === retries) throw e;
+      await new Promise(r => setTimeout(r, 500 * (attempt + 1))); // brief backoff before retry
+    }
+  }
 }
 
 async function aiCall(systemPrompt, userContent) {
@@ -644,6 +652,19 @@ async function loadAll() {
   renderCard();
   generatePrep();
   setSync(true);
+
+  // If a candidate on today's schedule has no real data (blank stage/location),
+  // it likely means RecruiterFlow hadn't returned data in time — retry once quietly after 3s
+  const anyBlank = names.some(n => {
+    const c = state.candidates[n];
+    return !c || (!c.stage && !c.location && !c.title);
+  });
+  if (anyBlank) {
+    setTimeout(async () => {
+      await loadCandidates();
+      renderCard();
+    }, 3000);
+  }
 }
 
 loadAll();
