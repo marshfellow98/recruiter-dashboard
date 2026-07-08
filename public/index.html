@@ -122,9 +122,55 @@
   .prep-block { background: #111; border-left: 3px solid #00d084; padding: 14px 16px; margin-bottom: 10px; border-radius: 0 8px 8px 0; }
   .prep-block p { font-size: 14px; color: #999; line-height: 1.75; }
   .prep-loading { font-size: 14px; color: #333; font-style: italic; padding: 2rem; text-align: center; }
+
+  /* ── Meeting alert banner ── */
+  .alert-banner {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 24px;
+    transform: translateY(-120%);
+    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  }
+  .alert-banner.show { transform: translateY(0); }
+  .alert-banner.amber { background: #3a2e0a; border-bottom: 2px solid #f5a623; }
+  .alert-banner.red { background: #3a0a0a; border-bottom: 2px solid #ff453a; animation: alertPulseBorder 1.2s infinite; }
+  @keyframes alertPulseBorder {
+    0%,100% { border-bottom-color: #ff453a; }
+    50% { border-bottom-color: #ff8078; }
+  }
+  .alert-dog { width: 44px; height: 44px; flex-shrink: 0; }
+  .alert-text { flex: 1; }
+  .alert-title { font-size: 15px; font-weight: 700; color: #fff; }
+  .alert-banner.amber .alert-title { color: #ffd88a; }
+  .alert-banner.red .alert-title { color: #ffb3ae; }
+  .alert-sub { font-size: 12px; color: #999; margin-top: 2px; }
+  .alert-dismiss {
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2);
+    color: #fff; border-radius: 8px; padding: 8px 16px; font-size: 12px; font-weight: 600;
+    cursor: pointer; font-family: 'Inter', sans-serif; flex-shrink: 0;
+  }
+  .alert-dismiss:hover { background: rgba(255,255,255,0.16); }
+
+  /* Schedule card urgency pulse */
+  .sched-item.urgent-amber { border-color: #f5a623 !important; animation: schedPulseAmber 1.6s infinite; }
+  .sched-item.urgent-red { border-color: #ff453a !important; animation: schedPulseRed 1s infinite; }
+  @keyframes schedPulseAmber { 0%,100%{box-shadow:0 0 0 0 rgba(245,166,35,0.4);} 50%{box-shadow:0 0 0 6px rgba(245,166,35,0);} }
+  @keyframes schedPulseRed { 0%,100%{box-shadow:0 0 0 0 rgba(255,69,58,0.5);} 50%{box-shadow:0 0 0 8px rgba(255,69,58,0);} }
 </style>
 </head>
 <body>
+
+<!-- Meeting alert banner with dog mascot -->
+<div class="alert-banner" id="alert-banner">
+  <div class="alert-dog" id="alert-dog-icon"></div>
+  <div class="alert-text">
+    <div class="alert-title" id="alert-title">—</div>
+    <div class="alert-sub" id="alert-sub">—</div>
+  </div>
+  <button class="alert-dismiss" onclick="dismissAlert()">Got it</button>
+</div>
+
 
 <div class="topbar">
   <div>
@@ -243,7 +289,119 @@ function findCandidate(name) {
   return match || null;
 }
 
-// ── API calls ─────────────────────────────────
+// ── Meeting alert system — scruffy dog mascot + sound cues ──────
+const DOG_CALM = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <ellipse cx="50" cy="62" rx="30" ry="20" fill="#c68b4f"/>
+  <ellipse cx="30" cy="50" rx="10" ry="16" fill="#a5713a" transform="rotate(-20 30 50)"/>
+  <ellipse cx="70" cy="50" rx="10" ry="16" fill="#a5713a" transform="rotate(20 70 50)"/>
+  <circle cx="50" cy="55" r="20" fill="#d9a066"/>
+  <path d="M40 58 Q50 66 60 58" stroke="#5a3c1e" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <ellipse cx="50" cy="50" rx="5" ry="4" fill="#5a3c1e"/>
+  <path d="M38 45 q3 -3 6 0" stroke="#3a2410" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M56 45 q3 -3 6 0" stroke="#3a2410" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <circle cx="20" cy="72" r="4" fill="#c68b4f"/>
+  <circle cx="80" cy="72" r="4" fill="#c68b4f"/>
+</svg>`;
+
+const DOG_ALERT = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <ellipse cx="50" cy="68" rx="26" ry="18" fill="#c68b4f"/>
+  <ellipse cx="28" cy="38" rx="9" ry="18" fill="#a5713a" transform="rotate(-35 28 38)"/>
+  <ellipse cx="72" cy="38" rx="9" ry="18" fill="#a5713a" transform="rotate(35 72 38)"/>
+  <circle cx="50" cy="50" r="20" fill="#d9a066"/>
+  <path d="M42 56 Q50 60 58 56" stroke="#5a3c1e" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <ellipse cx="50" cy="46" rx="5" ry="4" fill="#5a3c1e"/>
+  <circle cx="39" cy="42" r="3.2" fill="#2a1a0a"/>
+  <circle cx="61" cy="42" r="3.2" fill="#2a1a0a"/>
+  <circle cx="40.3" cy="40.8" r="0.9" fill="#fff"/>
+  <circle cx="62.3" cy="40.8" r="0.9" fill="#fff"/>
+  <path d="M18 82 q4 -14 10 -4" stroke="#a5713a" stroke-width="5" fill="none" stroke-linecap="round"/>
+</svg>`;
+
+// Which meeting keys have already shown each alert stage this session
+const alertsShown = { ten: new Set(), five: new Set() };
+let currentAlertKey = null;
+let currentAlertStage = null;
+
+function meetingKey(m) {
+  return `${m.attendees?.[0]||m.title}-${m.start}`;
+}
+
+function playChime(urgent) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const notes = urgent ? [880, 660] : [660];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      const start = ctx.currentTime + i * 0.18;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.15, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.35);
+      osc.start(start); osc.stop(start + 0.4);
+    });
+  } catch(e) { /* audio not available, fail silently */ }
+}
+
+function showAlert(m, stage) {
+  const name = m.attendees?.[0] || m.title;
+  const minsLeft = Math.round((new Date(m.start) - new Date())/60000);
+  const banner = document.getElementById('alert-banner');
+  const dogIcon = document.getElementById('alert-dog-icon');
+  const title = document.getElementById('alert-title');
+  const sub = document.getElementById('alert-sub');
+
+  banner.className = 'alert-banner show ' + (stage === 'five' ? 'red' : 'amber');
+  dogIcon.innerHTML = stage === 'five' ? DOG_ALERT : DOG_CALM;
+  title.textContent = stage === 'five'
+    ? `Heads up — ${name} in ${minsLeft} minutes!`
+    : `Coming up — ${name} in ${minsLeft} minutes`;
+  sub.textContent = stage === 'five'
+    ? 'Time to wrap up and get ready.'
+    : 'Just a friendly nudge from your desk buddy.';
+
+  currentAlertKey = meetingKey(m);
+  currentAlertStage = stage;
+  playChime(stage === 'five');
+}
+
+function dismissAlert() {
+  if (currentAlertKey && currentAlertStage) {
+    alertsShown[currentAlertStage].add(currentAlertKey);
+  }
+  document.getElementById('alert-banner').classList.remove('show');
+  currentAlertKey = null;
+  currentAlertStage = null;
+}
+
+function checkMeetingAlerts() {
+  if (state.currentDay !== 'today') return; // only alert for today's real schedule
+  const now = new Date();
+  const upcoming = state.todayMeetings
+    .map(m => ({ m, mins: (new Date(m.start) - now) / 60000 }))
+    .filter(x => x.mins > 0 && x.mins <= 10)
+    .sort((a,b) => a.mins - b.mins)[0];
+
+  // Update schedule strip urgency highlighting regardless of banner state
+  document.querySelectorAll('.sched-item').forEach(el => el.classList.remove('urgent-amber','urgent-red'));
+
+  if (!upcoming) return;
+  const key = meetingKey(upcoming.m);
+  const idx = state.todayMeetings.indexOf(upcoming.m);
+  const schedEl = document.querySelectorAll('.sched-item')[idx];
+
+  if (upcoming.mins <= 5) {
+    if (schedEl) schedEl.classList.add('urgent-red');
+    if (!alertsShown.five.has(key)) showAlert(upcoming.m, 'five');
+  } else {
+    if (schedEl) schedEl.classList.add('urgent-amber');
+    if (!alertsShown.ten.has(key)) showAlert(upcoming.m, 'ten');
+  }
+}
+
+
 async function apiFetch(path, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -690,6 +848,7 @@ async function loadAll() {
 }
 
 loadAll();
+setInterval(checkMeetingAlerts, 15000); // check every 15 seconds
 </script>
 </body>
 </html>
