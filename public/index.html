@@ -227,6 +227,22 @@ function activeMeetings() {
   return state.currentDay === 'today' ? state.todayMeetings : state.tomorrowMeetings;
 }
 
+// Look up a candidate by exact name, falling back to a fuzzy first-name+last-name-prefix match
+// (handles RecruiterFlow records where last_name has extra text like "Soto M.A., Insurance Agent")
+function findCandidate(name) {
+  if (state.candidates[name]) return state.candidates[name];
+  const parts = name.trim().split(' ');
+  const first = (parts[0]||'').toLowerCase();
+  const last = (parts[1]||'').toLowerCase();
+  const match = Object.values(state.candidates).find(c => {
+    const cParts = (c.name||'').trim().split(' ');
+    const cFirst = (cParts[0]||'').toLowerCase();
+    const cLast = (cParts[1]||'').toLowerCase();
+    return cFirst === first && cLast.startsWith(last) && last.length > 0;
+  });
+  return match || null;
+}
+
 // ── API calls ─────────────────────────────────
 async function apiFetch(path, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -295,7 +311,13 @@ async function loadCandidates() {
     const list = Array.isArray(data) ? data : (data.data || data.candidates || []);
     if (list.length) {
       list.forEach(c => {
-        const name = `${c.first_name||''} ${c.last_name||''}`.trim();
+        // RecruiterFlow sometimes stuffs credentials/titles into last_name (e.g. "Soto M.A., Insurance Agent")
+        // Strip anything after a comma, and drop trailing credential-like tokens (M.A., CFP, etc.)
+        const cleanLastName = (c.last_name||'')
+          .split(',')[0]
+          .replace(/\b([A-Z]\.){1,3}[A-Z]?\.?\b/g, '') // strip patterns like M.A. or Ph.D
+          .trim();
+        const name = `${c.first_name||''} ${cleanLastName}`.trim();
         const emailArr = Array.isArray(c.email) ? c.email : (c.email ? [c.email] : []);
         const phoneArr = Array.isArray(c.phone_number) ? c.phone_number : (c.phone_number ? [c.phone_number] : []);
         // RecruiterFlow stores manually-added notes inside upcoming_activities.tasks[].data.notes
@@ -351,7 +373,7 @@ async function loadEmails(name) {
 async function loadCalls(name) {
   try {
     const data = await apiFetch('/api/calls');
-    const candidate = state.candidates[name];
+    const candidate = findCandidate(name);
     const candidatePhone = candidate?.phone ? candidate.phone.replace(/\D/g,'').slice(-10) : '';
     const first = name.split(' ')[0].toLowerCase();
     state.calls[name] = (data.records||[])
@@ -453,7 +475,7 @@ function renderSchedule() {
     return `<div class="sched-item${i===state.selectedIdx?' active':''}${done?' done':''}${tClass}" onclick="selectCandidate(${i})">
       <div class="sched-time">${nowDot}${fmtTime(m.start)}</div>
       <div class="sched-name">${name}</div>
-      <div class="sched-role">${(state.candidates[name]||{}).title||''}</div>
+      <div class="sched-role">${(findCandidate(name)||{}).title||''}</div>
     </div>`;
   }).join('');
 }
@@ -475,7 +497,7 @@ function renderCard() {
   const now = new Date();
   const mt = new Date(m.start);
   const name = m.attendees?.[0] || m.title;
-  const c = state.candidates[name] || { name, title:'',company:'',email:'',phone:'',linkedin:'',stage:'',notes:'No notes on file.',salary:'',tags:[] };
+  const c = findCandidate(name) || { name, title:'',company:'',email:'',phone:'',linkedin:'',stage:'',notes:'No notes on file.',salary:'',tags:[] };
   const isTomorrow = state.currentDay === 'tomorrow';
   const done = !isTomorrow && mt < now && (now-mt) > 30*60000;
   const isNow = !isTomorrow && !done && Math.abs(now-mt) < 90*60000;
@@ -543,7 +565,7 @@ async function generatePrep() {
   const m = meetings[state.selectedIdx];
   if (!m) return;
   const name = m.attendees?.[0] || m.title;
-  const c = state.candidates[name]||{};
+  const c = findCandidate(name)||{};
   const isTomorrow = state.currentDay === 'tomorrow';
 
   document.getElementById('prep-title').textContent = `${isTomorrow?'Tomorrow Prep':'AI Prep'} · ${name.split(' ')[0]}`;
@@ -602,7 +624,7 @@ async function openModal() {
   const meetings = activeMeetings();
   const m = meetings[state.selectedIdx];
   const name = m?.attendees?.[0]||m?.title||'Candidate';
-  const c = state.candidates[name]||{};
+  const c = findCandidate(name)||{};
   document.getElementById('modal-title').textContent = `Full Prep · ${name}`;
   document.getElementById('modal-body').innerHTML = '<div class="prep-loading">Generating detailed prep…</div>';
 
