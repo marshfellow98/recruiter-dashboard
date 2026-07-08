@@ -87,9 +87,7 @@ async function getZoomToken() {
 }
 
 async function getRCToken() {
-  // Use JWT directly as bearer token
-  if (process.env.RC_JWT) return process.env.RC_JWT;
-  if (tokens.rc) return tokens.rc;
+  if (tokens.rc && tokens.rcExpiry && Date.now() < tokens.rcExpiry) return tokens.rc;
   const creds = Buffer.from(`${process.env.RC_CLIENT_ID_NEW || process.env.RC_CLIENT_ID}:${process.env.RC_CLIENT_SECRET_NEW || process.env.RC_CLIENT_SECRET}`).toString('base64');
   const body = encodeForm({
     grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -105,7 +103,14 @@ async function getRCToken() {
       'Content-Length': Buffer.byteLength(body)
     }
   }, body);
-  tokens.rc = res.body.access_token;
+  if (res.body.access_token) {
+    tokens.rc = res.body.access_token;
+    tokens.rcExpiry = Date.now() + (50 * 60 * 1000);
+    console.log('RC token acquired successfully');
+  } else {
+    console.error('RC token error:', JSON.stringify(res.body));
+  }
+  return tokens.rc;
   return tokens.rc;
 }
 
