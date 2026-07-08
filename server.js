@@ -1,652 +1,370 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Recruitment Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { background: #000; min-height: 100vh; }
-  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; padding: 1.5rem; }
+const http = require('http');
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
+const url = require('url');
 
-  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; padding-bottom: 1.25rem; border-bottom: 1px solid #1a1a1a; }
-  .brand { font-size: 14px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; }
-  .topbar-date { font-size: 14px; color: #777; margin-top: 4px; }
-  .stats-row { display: flex; gap: 32px; align-items: center; }
-  .stat { text-align: center; }
-  .stat-val { font-size: 42px; font-weight: 600; color: #fff; line-height: 1; }
-  .stat-label { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #666; margin-top: 6px; }
-  .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #00d084; box-shadow: 0 0 8px #00d084; }
-  .sync-dot.loading { background: #f5a623; box-shadow: 0 0 8px #f5a623; animation: pulse 1.2s infinite; }
-  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
-
-  /* Day toggle */
-  .day-toggle { display: flex; background: #0f0f0f; border-radius: 12px; padding: 4px; gap: 3px; margin-bottom: 16px; width: fit-content; }
-  .day-btn { padding: 10px 24px; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: none; color: #444; font-family: 'Inter', sans-serif; transition: all 0.15s; letter-spacing: 0.03em; }
-  .day-btn.active { background: #fff; color: #000; }
-  .day-btn.tomorrow.active { background: #1a1a1a; color: #fff; border: 1px solid #333; }
-  .tomorrow-banner { display: none; background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 12px; padding: 12px 18px; margin-bottom: 16px; font-size: 14px; color: #666; }
-  .tomorrow-banner.visible { display: block; }
-  .tomorrow-banner strong { color: #fff; }
-
-  .schedule-strip { display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 4px; }
-  .sched-item { flex-shrink: 0; padding: 14px 20px; border-radius: 12px; cursor: pointer; border: 1.5px solid #1a1a1a; background: #0a0a0a; min-width: 150px; transition: all 0.2s; }
-  .sched-item:hover { border-color: #333; }
-  .sched-item.active { background: #fff; border-color: #fff; }
-  .sched-item.done { opacity: 0.4; }
-  .sched-item.tomorrow-item.active { background: #1a1a1a; border-color: #333; }
-  .sched-item.tomorrow-item.active .sched-name { color: #fff; }
-  .sched-item.tomorrow-item.active .sched-time { color: #666; }
-  .sched-time { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: #555; margin-bottom: 6px; }
-  .sched-item.active .sched-time { color: #000; }
-  .sched-name { font-size: 15px; font-weight: 600; color: #fff; }
-  .sched-item.active .sched-name { color: #000; }
-  .sched-role { font-size: 11px; color: #444; margin-top: 3px; }
-  .sched-item.active .sched-role { color: #333; }
-  .now-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #00d084; margin-right: 5px; box-shadow: 0 0 6px #00d084; vertical-align: middle; }
-
-  .layout { display: grid; grid-template-columns: 1fr 280px; gap: 20px; }
-  .main-card { background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 20px; padding: 2rem; }
-  .main-card.tomorrow-mode { border-color: #1e1e1e; }
-  .cand-name { font-size: 52px; font-weight: 700; color: #fff; line-height: 1; letter-spacing: -0.02em; margin-bottom: 8px; }
-  .cand-title { font-size: 17px; color: #555; margin-bottom: 16px; }
-  .cand-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 2rem; }
-  .tag { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 5px 14px; border-radius: 20px; }
-  .tag-now { background: #00d084; color: #000; }
-  .tag-tomorrow { background: #1a1a1a; color: #888; border: 1px solid #333; }
-  .tag-gray { background: #1a1a1a; color: #666; border: 1px solid #222; }
-
-  .contact-row { display: flex; gap: 10px; margin-bottom: 2rem; flex-wrap: wrap; }
-  .contact-btn { display: flex; align-items: center; gap: 8px; padding: 14px 20px; border-radius: 12px; font-size: 14px; font-weight: 500; color: #fff; background: #141414; border: 1px solid #252525; cursor: pointer; text-decoration: none; transition: all 0.15s; font-family: 'Inter', sans-serif; }
-  .contact-btn:hover { background: #1e1e1e; border-color: #333; }
-  .contact-btn.primary { background: #fff; color: #000; border-color: #fff; }
-  .contact-btn.primary:hover { background: #e8e8e8; }
-
-  .info-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 2rem; }
-  .info-cell { background: #111; border-radius: 12px; padding: 16px 18px; }
-  .info-label { font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #444; margin-bottom: 6px; }
-  .info-val { font-size: 16px; font-weight: 500; color: #fff; }
-
-  .tabs { display: flex; background: #0f0f0f; border-radius: 10px; padding: 4px; gap: 3px; margin-bottom: 16px; }
-  .tab { flex: 1; text-align: center; font-size: 13px; font-weight: 500; padding: 9px; border-radius: 8px; cursor: pointer; color: #444; border: none; background: none; font-family: 'Inter', sans-serif; transition: all 0.15s; }
-  .tab.active { background: #1e1e1e; color: #fff; }
-  .tab-content { display: none; }
-  .tab-content.active { display: block; }
-
-  .notes-text { font-size: 16px; color: #aaa; line-height: 1.75; padding: 16px; background: #0d0d0d; border-radius: 12px; border-left: 3px solid #00d084; }
-  .empty-state { font-size: 14px; color: #333; padding: 20px; text-align: center; font-style: italic; }
-
-  .email-item { padding: 14px 16px; background: #0d0d0d; border-radius: 12px; margin-bottom: 8px; border: 1px solid #1a1a1a; }
-  .email-from { font-size: 12px; color: #555; margin-bottom: 4px; display: flex; justify-content: space-between; }
-  .email-subj { font-size: 15px; font-weight: 500; color: #fff; }
-  .email-preview { font-size: 13px; color: #444; margin-top: 5px; line-height: 1.5; }
-
-  .call-item { display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: #0d0d0d; border-radius: 12px; margin-bottom: 8px; border: 1px solid #1a1a1a; }
-  .call-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-  .dot-in { background: #00d084; }
-  .dot-out { background: #0a84ff; }
-  .dot-missed { background: #ff453a; }
-  .call-dir { font-size: 13px; color: #555; width: 64px; }
-  .call-dur { font-size: 15px; font-weight: 500; color: #fff; flex: 1; }
-  .call-date { font-size: 12px; color: #444; }
-
-  .right-col { display: flex; flex-direction: column; gap: 14px; }
-  .ai-card, .pipe-card { background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 20px; padding: 1.5rem; }
-  .panel-title { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #666; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
-  .panel-title::after { content:''; flex:1; height:1px; background:#1a1a1a; }
-
-  .tip { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #111; }
-  .tip:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
-  .tip-head { font-size: 16px; font-weight: 600; color: #fff; margin-bottom: 6px; }
-  .tip-body { font-size: 14px; color: #888; line-height: 1.65; }
-  .tip-loading { font-size: 13px; color: #333; font-style: italic; padding: 8px 0; }
-
-  .pipe-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #111; }
-  .pipe-row:last-child { border-bottom: none; }
-  .pipe-stage { font-size: 14px; color: #888; width: 84px; }
-  .pipe-track { flex: 1; height: 3px; background: #1a1a1a; border-radius: 2px; }
-  .pipe-fill { height: 3px; background: #fff; border-radius: 2px; transition: width 0.6s ease; }
-  .pipe-count { font-size: 24px; font-weight: 400; color: #fff; width: 28px; text-align: right; }
-
-  .deeper-btn { width: 100%; margin-top: 14px; padding: 13px; border-radius: 10px; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; background: #141414; border: 1px solid #333; color: #888; font-family: 'Inter', sans-serif; transition: all 0.2s; }
-  .deeper-btn:hover { background: #1e1e1e; color: #fff; border-color: #555; }
-
-  .modal-wrap { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 100; align-items: center; justify-content: center; }
-  .modal-wrap.open { display: flex; }
-  .modal { background: #0a0a0a; border: 1px solid #1a1a1a; border-top: 2px solid #00d084; border-radius: 20px; padding: 2rem; width: 560px; max-width: 92vw; max-height: 80vh; overflow-y: auto; }
-  .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
-  .modal-title { font-size: 24px; font-weight: 700; color: #fff; }
-  .modal-close { background: none; border: none; color: #444; font-size: 22px; cursor: pointer; }
-  .modal-close:hover { color: #fff; }
-  .prep-block { background: #111; border-left: 3px solid #00d084; padding: 14px 16px; margin-bottom: 10px; border-radius: 0 8px 8px 0; }
-  .prep-block p { font-size: 14px; color: #999; line-height: 1.75; }
-  .prep-loading { font-size: 14px; color: #333; font-style: italic; padding: 2rem; text-align: center; }
-</style>
-</head>
-<body>
-
-<div class="topbar">
-  <div>
-    <div class="brand">Recruitment</div>
-    <div class="topbar-date" id="today-date">Loading…</div>
-  </div>
-  <div class="stats-row">
-    <div class="stat"><div class="stat-val" id="stat-today">—</div><div class="stat-label">Today</div></div>
-    <div class="stat"><div class="stat-val" id="stat-pipeline">—</div><div class="stat-label">Pipeline</div></div>
-    <div class="stat"><div class="stat-val" id="stat-open">—</div><div class="stat-label">Open</div></div>
-    <div class="stat"><div class="stat-val" id="stat-placed">—</div><div class="stat-label">Placed</div></div>
-    <div class="sync-dot loading" id="sync-dot"></div>
-  </div>
-</div>
-
-<!-- Day toggle -->
-<div class="day-toggle">
-  <button class="day-btn active" id="btn-today" onclick="switchDay('today')">Today</button>
-  <button class="day-btn tomorrow" id="btn-tomorrow" onclick="switchDay('tomorrow')">Tomorrow</button>
-</div>
-
-<div class="tomorrow-banner" id="tomorrow-banner">
-  Planning ahead — <strong id="tomorrow-label"></strong> · Read-only preview
-</div>
-
-<div class="schedule-strip" id="schedule-strip"></div>
-
-<div class="layout">
-  <div>
-    <div class="main-card" id="main-card">
-      <div class="cand-name" id="cand-name">Loading…</div>
-      <div class="cand-title" id="cand-title"></div>
-      <div class="cand-tags" id="cand-tags"></div>
-      <div class="contact-row" id="contact-row"></div>
-      <div class="info-row" id="info-row"></div>
-      <div class="tabs">
-        <button class="tab active" onclick="switchTab(this,'tab-notes')">Activity</button>
-        <button class="tab" onclick="switchTab(this,'tab-emails')">Emails</button>
-        <button class="tab" onclick="switchTab(this,'tab-calls')">Calls</button>
-      </div>
-      <div id="tab-notes" class="tab-content active">
-        <div style="font-size:11px;color:#444;margin-bottom:10px;letter-spacing:0.05em;">FROM RECRUITERFLOW TASKS &amp; ACTIVITY LOG</div>
-        <div class="notes-text" id="notes-text">Loading…</div>
-      </div>
-      <div id="tab-emails" class="tab-content"><div id="emails-list"></div></div>
-      <div id="tab-calls" class="tab-content"><div id="calls-list"></div></div>
-    </div>
-  </div>
-  <div class="right-col">
-    <div class="ai-card">
-      <div class="panel-title" id="prep-title">AI Prep</div>
-      <div id="prep-tips"><div class="tip-loading">Select a candidate to generate prep notes…</div></div>
-      <button class="deeper-btn" id="deeper-btn" style="display:none" onclick="openModal()">↗ Full prep notes</button>
-    </div>
-    <div class="pipe-card">
-      <div class="panel-title">Pipeline</div>
-      <div id="pipeline-rows"><div class="tip-loading">Loading…</div></div>
-    </div>
-  </div>
-</div>
-
-<div class="modal-wrap" id="modal">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title" id="modal-title">Full Prep</div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    <div id="modal-body"><div class="prep-loading">Generating…</div></div>
-  </div>
-</div>
-
-<script>
-const state = {
-  todayMeetings: [],
-  tomorrowMeetings: [],
-  candidates: {},
-  emails: {},
-  calls: {},
-  pipeline: [],
-  selectedIdx: 0,
-  currentDay: 'today'
+const CONFIG = {
+  recruiterflow: { apiKey: process.env.RECRUITERFLOW_API_KEY },
+  msGraph: {
+    tenantId: process.env.MS_TENANT_ID,
+    clientId: process.env.MS_CLIENT_ID,
+    clientSecret: process.env.MS_CLIENT_SECRET
+  },
+  zoom: {
+    accountId: process.env.ZOOM_ACCOUNT_ID,
+    clientId: process.env.ZOOM_CLIENT_ID,
+    clientSecret: process.env.ZOOM_CLIENT_SECRET
+  },
+  ringcentral: {
+    clientId: process.env.RC_CLIENT_ID_NEW || process.env.RC_CLIENT_ID,
+    clientSecret: process.env.RC_CLIENT_SECRET_NEW || process.env.RC_CLIENT_SECRET
+  }
 };
 
-function fmtDate(date) {
-  return date.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
-}
-function fmtTime(iso) {
-  if (!iso) return '';
-  // Microsoft Graph returns times without Z suffix but they are UTC
-  // Add Z if missing to ensure correct UTC parsing
-  const utcIso = iso.endsWith('Z') ? iso : iso + 'Z';
-  return new Date(utcIso).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true });
-}
-function setSync(live) {
-  const dot = document.getElementById('sync-dot');
-  dot.className = 'sync-dot' + (live ? '' : ' loading');
-}
-function activeMeetings() {
-  return state.currentDay === 'today' ? state.todayMeetings : state.tomorrowMeetings;
-}
+const tokens = { ms: null, zoom: null, rc: null, msExpiry: null };
 
-// ── API calls ─────────────────────────────────
-async function apiFetch(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
-
-async function aiCall(systemPrompt, userContent) {
-  const res = await fetch('/api/ai', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1000,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userContent }]
-    })
-  });
-  const data = await res.json();
-  return (data.content||[]).map(b=>b.text||'').join('');
-}
-
-async function loadCalendar() {
-  try {
-    const data = await apiFetch('/api/calendar');
-    if (data.value && data.value.length) {
-      state.todayMeetings = data.value.map(mapMeeting);
-      return;
-    }
-  } catch(e) { console.warn('Calendar:', e.message); }
-  useDemoMeetings();
-}
-
-async function loadTomorrowCalendar() {
-  try {
-    const data = await apiFetch('/api/calendar/tomorrow');
-    if (data.value && data.value.length) {
-      state.tomorrowMeetings = data.value.map(mapMeeting);
-      return;
-    }
-  } catch(e) { console.warn('Tomorrow calendar:', e.message); }
-  useDemoTomorrowMeetings();
-}
-
-function mapMeeting(e) {
-  return {
-    title: e.subject || 'Meeting',
-    start: e.start?.dateTime,
-    attendees: (e.attendees||[]).map(a=>a.emailAddress?.name).filter(Boolean),
-    joinUrl: e.onlineMeeting?.joinUrl || null,
-    preview: e.bodyPreview || ''
-  };
-}
-
-async function loadCandidates() {
-  try {
-    const data = await apiFetch('/api/candidates');
-    // RecruiterFlow returns a raw array directly, not wrapped in data/candidates key
-    const list = Array.isArray(data) ? data : (data.data || data.candidates || []);
-    if (list.length) {
-      list.forEach(c => {
-        const name = `${c.first_name||''} ${c.last_name||''}`.trim();
-        const emailArr = Array.isArray(c.email) ? c.email : (c.email ? [c.email] : []);
-        const phoneArr = Array.isArray(c.phone_number) ? c.phone_number : (c.phone_number ? [c.phone_number] : []);
-        // RecruiterFlow stores manually-added notes inside upcoming_activities.tasks[].data.notes
-        // (the direct candidate.notes field is essentially always empty)
-        const taskNotes = (c.upcoming_activities?.tasks || [])
-          .map(t => t.data?.notes || '')
-          .filter(Boolean)
-          .map(n => n.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim());
-        const noteText = taskNotes.length
-          ? taskNotes.join(' | ')
-          : (c.candidate_summary ? c.candidate_summary.replace(/<[^>]*>/g,'').trim() : '');
-        // Stage comes from jobs[].stage_name if present
-        const stage = (c.jobs && c.jobs[0] && c.jobs[0].stage_name) || '';
-        state.candidates[name] = {
-          name,
-          title: c.current_designation || c.current_title || '',
-          company: c.current_organization || c.current_company || '',
-          email: emailArr[0] || '',
-          phone: phoneArr[0] || '',
-          linkedin: c.linkedin_profile ? `https://linkedin.com/in/${c.linkedin_profile}` : (c.linkedin_url || ''),
-          stage: stage || c.status || '',
-          notes: noteText || 'No notes on file.',
-          location: c.location?.location || c.location?.city || '',
-          source: c.source_name || '',
-          tags: c.tags || []
-        };
+function fetchJSON(options, body) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, res => {
+      let data = '';
+      res.on('data', d => data += d);
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
+        catch(e) { resolve({ status: res.statusCode, body: data }); }
       });
-      const stages = {};
-      list.forEach(c=>{ const s=(c.jobs && c.jobs[0] && c.jobs[0].stage_name) || 'Sourced'; stages[s]=(stages[s]||0)+1; });
-      state.pipeline = Object.entries(stages).map(([s,n])=>({stage:s,count:n}));
-      document.getElementById('stat-pipeline').textContent = list.length;
-      const placed = state.pipeline.find(p=>p.stage.toLowerCase().includes('place'));
-      if (placed) document.getElementById('stat-placed').textContent = placed.count;
-      return;
+    });
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+function encodeForm(obj) {
+  return Object.entries(obj).map(([k,v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+}
+
+async function getMSToken() {
+  // Clear cached token if expired (50 min expiry)
+  if (tokens.msExpiry && Date.now() > tokens.msExpiry) {
+    tokens.ms = null;
+    tokens.msExpiry = null;
+  }
+  if (tokens.ms) return tokens.ms;
+  const body = encodeForm({
+    grant_type: 'client_credentials',
+    client_id: CONFIG.msGraph.clientId,
+    client_secret: CONFIG.msGraph.clientSecret,
+    scope: 'https://graph.microsoft.com/.default'
+  });
+  const res = await fetchJSON({
+    hostname: 'login.microsoftonline.com',
+    path: `/${CONFIG.msGraph.tenantId}/oauth2/v2.0/token`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
+  }, body);
+  if (res.body.access_token) {
+    tokens.ms = res.body.access_token;
+    tokens.msExpiry = Date.now() + (50 * 60 * 1000); // 50 minutes
+    console.log('MS token acquired successfully');
+  } else {
+    console.error('MS token error:', JSON.stringify(res.body));
+  }
+  return tokens.ms;
+}
+
+async function getZoomToken() {
+  if (tokens.zoom) return tokens.zoom;
+  const creds = Buffer.from(`${CONFIG.zoom.clientId}:${CONFIG.zoom.clientSecret}`).toString('base64');
+  const res = await fetchJSON({
+    hostname: 'zoom.us',
+    path: `/oauth/token?grant_type=account_credentials&account_id=${CONFIG.zoom.accountId}`,
+    method: 'POST',
+    headers: { 'Authorization': `Basic ${creds}`, 'Content-Length': 0 }
+  }, '');
+  tokens.zoom = res.body.access_token;
+  return tokens.zoom;
+}
+
+async function getRCToken() {
+  if (tokens.rc && tokens.rcExpiry && Date.now() < tokens.rcExpiry) return tokens.rc;
+  const creds = Buffer.from(`${process.env.RC_CLIENT_ID_NEW || process.env.RC_CLIENT_ID}:${process.env.RC_CLIENT_SECRET_NEW || process.env.RC_CLIENT_SECRET}`).toString('base64');
+  const body = encodeForm({
+    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    assertion: process.env.RC_JWT
+  });
+  const res = await fetchJSON({
+    hostname: 'platform.ringcentral.com',
+    path: '/restapi/oauth/token',
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${creds}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Content-Length': Buffer.byteLength(body)
     }
-  } catch(e) { console.warn('RecruiterFlow:', e.message); }
-  useDemoCandidates();
-  useDemoPipeline();
-}
-
-async function loadEmails(name) {
-  try {
-    const data = await apiFetch(`/api/emails?name=${encodeURIComponent(name)}`);
-    state.emails[name] = (data.value||[]).map(m=>({
-      subject: m.subject||'(no subject)',
-      from: m.from?.emailAddress?.name||m.from?.emailAddress?.address||'Unknown',
-      date: m.receivedDateTime, preview: m.bodyPreview||'',
-      webLink: m.webLink||null
-    }));
-  } catch(e) { state.emails[name] = []; }
-}
-
-async function loadCalls(name) {
-  try {
-    const data = await apiFetch('/api/calls');
-    const candidate = state.candidates[name];
-    const candidatePhone = candidate?.phone ? candidate.phone.replace(/\D/g,'').slice(-10) : '';
-    const first = name.split(' ')[0].toLowerCase();
-    state.calls[name] = (data.records||[])
-      .filter(r => {
-        const toPhone = (r.to?.phoneNumber||'').replace(/\D/g,'').slice(-10);
-        const fromPhone = (r.from?.phoneNumber||'').replace(/\D/g,'').slice(-10);
-        const toName = (r.to?.name||'').toLowerCase();
-        const fromName = (r.from?.name||'').toLowerCase();
-        // Match by phone number (most reliable) or by name containing candidate's first name
-        return (candidatePhone && (toPhone === candidatePhone || fromPhone === candidatePhone))
-          || toName.includes(first) || fromName.includes(first);
-      })
-      .map(r=>({ direction:r.direction, duration:r.duration, startTime:r.startTime, result:r.result }));
-  } catch(e) { state.calls[name]=[]; }
-}
-
-// ── Demo fallbacks ────────────────────────────
-function useDemoMeetings() {
-  const b = new Date(); b.setHours(9,0,0,0);
-  const t=(h,m)=>{ const d=new Date(b); d.setHours(h,m); return d.toISOString(); };
-  state.todayMeetings = [
-    { title:'Sarah Chen',   start:t(9,0),  attendees:['Sarah Chen'],   joinUrl:null },
-    { title:'Marcus Webb',  start:t(10,30),attendees:['Marcus Webb'],  joinUrl:null },
-    { title:'Priya Nair',   start:t(14,0), attendees:['Priya Nair'],   joinUrl:'https://zoom.us/j/demo' },
-    { title:'James Torres', start:t(16,0), attendees:['James Torres'], joinUrl:null }
-  ];
-}
-function useDemoTomorrowMeetings() {
-  const b = new Date(); b.setDate(b.getDate()+1); b.setHours(9,0,0,0);
-  const t=(h,m)=>{ const d=new Date(b); d.setHours(h,m); return d.toISOString(); };
-  state.tomorrowMeetings = [
-    { title:'David Park',   start:t(10,0), attendees:['David Park'],   joinUrl:null },
-    { title:'Lisa Romero',  start:t(13,30),attendees:['Lisa Romero'],  joinUrl:'https://zoom.us/j/demo2' },
-    { title:'Tom Bradley',  start:t(15,0), attendees:['Tom Bradley'],  joinUrl:null }
-  ];
-}
-function useDemoCandidates() {
-  state.candidates = {
-    'Priya Nair':   { name:'Priya Nair',   title:'Associate Actuary II', company:'Travelers Insurance',email:'priya.nair@email.com',  phone:'(617) 555-0148',linkedin:'https://linkedin.com/in/priyanair',  stage:'First Call',  notes:'Strong personal auto reserving background. Studying for FCAS exam 8 this fall. Interested in moving to a smaller carrier with more visibility. Follow up on exam timeline and post-exam comp expectations.',salary:'$135–155k',tags:['FCAS Candidate','8 yrs exp'] },
-    'James Torres': { name:'James Torres', title:'Loss Control Manager',  company:'Liberty Mutual',    email:'j.torres@email.com',    phone:'(312) 555-0293',linkedin:'https://linkedin.com/in/jamestorres',stage:'First Call',  notes:'Referred by Marcus Webb. CSP certified, heavy commercial property focus. Seeking Director-level move. Prefers Midwest, open to remote.',salary:'$120–140k',tags:['Commercial Lines','12 yrs exp'] },
-    'Sarah Chen':   { name:'Sarah Chen',   title:'Claims Director',       company:'Nationwide',        email:'s.chen@email.com',      phone:'(614) 555-0211',linkedin:'https://linkedin.com/in/sarahchen',  stage:'Submitted',   notes:'Strong claims leadership background. 15 years P&C. Very motivated to move.',salary:'$150–170k',tags:['Claims','15 yrs exp'] },
-    'Marcus Webb':  { name:'Marcus Webb',  title:'Underwriting VP',       company:'Chubb',             email:'m.webb@email.com',      phone:'(212) 555-0399',linkedin:'https://linkedin.com/in/marcuswebb', stage:'Interviewing',notes:'Senior underwriting leader. Commercial specialty focus. Strong references.',salary:'$175–200k',tags:['Underwriting','20 yrs exp'] },
-    'David Park':   { name:'David Park',   title:'Sr. Claims Adjuster',   company:'Allstate',          email:'d.park@email.com',      phone:'(773) 555-0102',linkedin:'https://linkedin.com/in/davidpark',  stage:'First Call',  notes:'10 years complex commercial claims. Interested in management track.',salary:'$95–115k',tags:['Claims','10 yrs exp'] },
-    'Lisa Romero':  { name:'Lisa Romero',  title:'Underwriting Manager',  company:'Markel',            email:'l.romero@email.com',    phone:'(804) 555-0177',linkedin:'https://linkedin.com/in/lisaromero', stage:'Sourced',     notes:'Specialty lines background, E&S market. Strong technical underwriter.',salary:'$130–150k',tags:['Specialty Lines','E&S'] },
-    'Tom Bradley':  { name:'Tom Bradley',  title:'Risk Engineer',         company:'FM Global',         email:'t.bradley@email.com',   phone:'(401) 555-0244',linkedin:'https://linkedin.com/in/tombradley', stage:'Sourced',     notes:'Property risk engineering, large commercial accounts. PE licensed.',salary:'$110–130k',tags:['Risk Engineering','PE'] }
-  };
-}
-function useDemoPipeline() {
-  state.pipeline = [
-    {stage:'Sourced',count:14},{stage:'First call',count:9},
-    {stage:'Submitted',count:6},{stage:'Interviewing',count:4},{stage:'Placed',count:1}
-  ];
-}
-
-// ── Day toggle ────────────────────────────────
-function switchDay(day) {
-  state.currentDay = day;
-  state.selectedIdx = 0;
-  document.getElementById('btn-today').className = 'day-btn' + (day==='today'?' active':'');
-  document.getElementById('btn-tomorrow').className = 'day-btn tomorrow' + (day==='tomorrow'?' active':'');
-  const banner = document.getElementById('tomorrow-banner');
-  banner.className = 'tomorrow-banner' + (day==='tomorrow'?' visible':'');
-  if (day==='tomorrow') {
-    const t = new Date(); t.setDate(t.getDate()+1);
-    document.getElementById('tomorrow-label').textContent = t.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
-    if (!state.tomorrowMeetings.length) loadTomorrowCalendar().then(()=>{ renderSchedule(); renderCard(); generatePrep(); });
+  }, body);
+  if (res.body.access_token) {
+    tokens.rc = res.body.access_token;
+    tokens.rcExpiry = Date.now() + (50 * 60 * 1000);
+    console.log('RC token acquired successfully');
+  } else {
+    console.error('RC token error:', JSON.stringify(res.body));
   }
-  renderSchedule();
-  renderCard();
-  generatePrep();
+  return tokens.rc;
+  return tokens.rc;
 }
 
-// ── Render schedule ───────────────────────────
-function renderSchedule() {
-  const now = new Date();
-  const meetings = activeMeetings();
-  const isTomorrow = state.currentDay === 'tomorrow';
+async function handleAPI(pathname, query) {
 
-  document.getElementById('today-date').textContent =
-    (isTomorrow ? 'Tomorrow — ' : 'Today — ') +
-    new Date(isTomorrow ? Date.now()+86400000 : Date.now()).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}) +
-    ' · P&C Insurance';
+  // Debug single candidate detail
+  if (pathname === '/api/debug/candidate') {
+    const id = query.id || '31211';
+    const res = await fetchJSON({
+      hostname: 'recruiterflow.com',
+      path: `/api/external/candidate/${id}`,
+      method: 'GET',
+      headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
+    });
+    return { status: res.status, body: res.body };
+  }
 
-  if (!isTomorrow) document.getElementById('stat-today').textContent = meetings.length;
+  // Debug RC token
+  if (pathname === '/api/debug/rctoken') {
+    const clientId = process.env.RC_CLIENT_ID_NEW || process.env.RC_CLIENT_ID;
+    const clientSecret = process.env.RC_CLIENT_SECRET_NEW || process.env.RC_CLIENT_SECRET;
+    const jwt = process.env.RC_JWT || '';
+    const creds = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+    const body = encodeForm({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt
+    });
+    const res = await fetchJSON({
+      hostname: 'platform.ringcentral.com',
+      path: '/restapi/oauth/token',
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${creds}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    }, body);
+    return {
+      status: res.status,
+      body: res.body,
+      debug: {
+        clientIdUsed: clientId,
+        clientIdLength: clientId?.length,
+        jwtLength: jwt.length,
+        jwtStart: jwt.slice(0, 20),
+        jwtEnd: jwt.slice(-20)
+      }
+    };
+  }
 
-  const strip = document.getElementById('schedule-strip');
-  if (!meetings.length) {
-    strip.innerHTML = '<div style="color:#333;font-style:italic;font-size:14px;padding:14px 0">No meetings scheduled</div>';
+  // Debug MS token
+  if (pathname === '/api/calendar') {
+    const token = await getMSToken();
+    // Wide window covering full day in Central Time regardless of server UTC offset
+    const now = new Date();
+    const centralOffset = 5 * 60 * 60 * 1000;
+    const centralNow = new Date(now.getTime() - centralOffset);
+    const today = centralNow.toISOString().split('T')[0];
+    console.log('Fetching calendar for date:', today);
+    const res = await fetchJSON({
+      hostname: 'graph.microsoft.com',
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${today}T00:00:00Z&endDateTime=${today}T23:59:59Z&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=20`,
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    console.log('Calendar response status:', res.status, 'items:', res.body?.value?.length);
+    return res.body;
+  }
+
+  if (pathname === '/api/calendar/tomorrow') {
+    const token = await getMSToken();
+    // Use Central Time (UTC-5) for tomorrow
+    const now = new Date();
+    const centralOffset = 5 * 60 * 60 * 1000;
+    const centralNow = new Date(now.getTime() - centralOffset);
+    centralNow.setDate(centralNow.getDate() + 1);
+    const tDate = centralNow.toISOString().split('T')[0];
+    const res = await fetchJSON({
+      hostname: 'graph.microsoft.com',
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${tDate}T05:00:00Z&endDateTime=${tDate}T23:59:59Z&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=20`,
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    return res.body;
+  }
+
+  if (pathname === '/api/emails') {
+    const token = await getMSToken();
+    const name = query.name || '';
+    const res = await fetchJSON({
+      hostname: 'graph.microsoft.com',
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$search="${encodeURIComponent(name)}"&$select=subject,from,receivedDateTime,bodyPreview,webLink&$top=5`,
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    return res.body;
+  }
+
+  if (pathname === '/api/candidates') {
+    const res = await fetchJSON({
+      hostname: 'recruiterflow.com',
+      path: '/api/external/candidate/list?current_page=1&items_per_page=100',
+      method: 'GET',
+      headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
+    });
+    return res.body;
+  }
+
+  if (pathname === '/api/calls') {
+    const token = await getRCToken();
+    const today = new Date().toISOString().split('T')[0];
+    const res = await fetchJSON({
+      hostname: 'platform.ringcentral.com',
+      path: `/restapi/v1.0/account/~/call-log?type=Voice&dateFrom=${today}T00:00:00Z&perPage=20`,
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    return res.body;
+  }
+
+  if (pathname === '/api/zoom') {
+    const token = await getZoomToken();
+    const res = await fetchJSON({
+      hostname: 'api.zoom.us',
+      path: '/v2/users/me/meetings?type=scheduled&page_size=10',
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    return res.body;
+  }
+
+  return null;
+}
+
+async function handleAIProxy(reqBody) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(reqBody);
+    const req = https.request({
+      hostname: 'api.anthropic.com',
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        'anthropic-version': '2023-06-01',
+        'x-api-key': process.env.ANTHROPIC_API_KEY
+      }
+    }, res => {
+      let data = '';
+      res.on('data', d => data += d);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch(e) { resolve({ error: 'Parse error' }); }
+      });
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => { try { resolve(JSON.parse(body)); } catch(e) { resolve({}); } });
+    req.on('error', reject);
+  });
+}
+
+const server = http.createServer(async (req, res) => {
+  const parsed = url.parse(req.url, true);
+  const pathname = parsed.pathname;
+  const query = parsed.query;
+
+  console.log(`${req.method} ${pathname}`);
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
+
+  if (pathname === '/' || pathname === '/index.html') {
+    try {
+      const html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(html);
+    } catch(e) {
+      console.error('Could not read index.html:', e.message);
+      res.writeHead(500);
+      res.end('Could not load dashboard: ' + e.message);
+    }
     return;
   }
 
-  strip.innerHTML = meetings.map((m,i) => {
-    const mt = new Date(m.start);
-    const name = m.attendees?.[0] || m.title;
-    const done = !isTomorrow && mt < now && (now-mt) > 30*60000;
-    const isNow = !isTomorrow && !done && Math.abs(now-mt) < 90*60000;
-    const nowDot = isNow ? '<span class="now-dot"></span>' : '';
-    const tClass = isTomorrow ? ' tomorrow-item' : '';
-    return `<div class="sched-item${i===state.selectedIdx?' active':''}${done?' done':''}${tClass}" onclick="selectCandidate(${i})">
-      <div class="sched-time">${nowDot}${fmtTime(m.start)}</div>
-      <div class="sched-name">${name}</div>
-      <div class="sched-role">${(state.candidates[name]||{}).title||''}</div>
-    </div>`;
-  }).join('');
-}
-
-// ── Render main card ──────────────────────────
-function renderCard() {
-  const meetings = activeMeetings();
-  const m = meetings[state.selectedIdx];
-  if (!m) {
-    document.getElementById('cand-name').textContent = 'No meetings';
-    document.getElementById('cand-title').textContent = '';
-    document.getElementById('cand-tags').innerHTML = '';
-    document.getElementById('contact-row').innerHTML = '';
-    document.getElementById('info-row').innerHTML = '';
-    document.getElementById('notes-text').textContent = 'No meetings scheduled for this day.';
+  if (pathname === '/api/ai' && req.method === 'POST') {
+    console.log('AI proxy called');
+    try {
+      const body = await readBody(req);
+      const data = await handleAIProxy(body);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(data));
+    } catch(e) {
+      console.error('AI proxy error:', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
     return;
   }
 
-  const now = new Date();
-  const mt = new Date(m.start);
-  const name = m.attendees?.[0] || m.title;
-  const c = state.candidates[name] || { name, title:'',company:'',email:'',phone:'',linkedin:'',stage:'',notes:'No notes on file.',salary:'',tags:[] };
-  const isTomorrow = state.currentDay === 'tomorrow';
-  const done = !isTomorrow && mt < now && (now-mt) > 30*60000;
-  const isNow = !isTomorrow && !done && Math.abs(now-mt) < 90*60000;
-
-  document.getElementById('main-card').className = 'main-card' + (isTomorrow ? ' tomorrow-mode' : '');
-  document.getElementById('cand-name').textContent = name;
-  document.getElementById('cand-title').textContent = [c.title,c.company].filter(Boolean).join(' · ');
-
-  const timeTagCls = isTomorrow ? 'tag-tomorrow' : 'tag-now';
-  const timePrefix = isTomorrow ? '◷ ' : isNow ? '▶ ' : done ? '✓ ' : '';
-  const tags = `<span class="tag ${timeTagCls}">${timePrefix}${fmtTime(m.start)}</span>` +
-    (c.tags||[]).map(t=>`<span class="tag tag-gray">${t}</span>`).join('');
-  document.getElementById('cand-tags').innerHTML = tags;
-
-  let btns = '';
-  if (c.linkedin) btns += `<a class="contact-btn primary" href="${c.linkedin}" target="_blank">↗ LinkedIn</a>`;
-  if (c.email)    btns += `<a class="contact-btn" href="mailto:${c.email}">✉ ${c.email}</a>`;
-  if (c.phone)    btns += `<a class="contact-btn" href="tel:${c.phone.replace(/\D/g,'')}">✆ ${c.phone}</a>`;
-  if (m.joinUrl)  btns += `<a class="contact-btn" href="${m.joinUrl}" target="_blank">⬛ Join Zoom</a>`;
-  btns += `<a class="contact-btn" href="https://app.recruiterflow.com" target="_blank">↗ RecruiterFlow</a>`;
-  document.getElementById('contact-row').innerHTML = btns;
-
-  document.getElementById('info-row').innerHTML = `
-    <div class="info-cell"><div class="info-label">Stage</div><div class="info-val">${c.stage||'—'}</div></div>
-    <div class="info-cell"><div class="info-label">Location</div><div class="info-val">${c.location||'—'}</div></div>
-    <div class="info-cell"><div class="info-label">Meeting</div><div class="info-val">${fmtTime(m.start)}</div></div>
-    <div class="info-cell"><div class="info-label">Source</div><div class="info-val">${c.source||'—'}</div></div>`;
-
-  document.getElementById('notes-text').textContent = c.notes || 'No tasks or activity logged yet. Log post-call notes as a Task in RecruiterFlow to see them here.';
-
-  const emails = state.emails[name]||[];
-  document.getElementById('emails-list').innerHTML = emails.length
-    ? emails.map(e=>`<div class="email-item" ${e.webLink?`onclick="window.open('${e.webLink}','_blank')" style="cursor:pointer"`:''}> 
-        <div class="email-from"><span>${e.from}</span><span>${e.date?new Date(e.date).toLocaleDateString():''}</span></div>
-        <div class="email-subj">${e.subject}</div>
-        <div class="email-preview">${(e.preview||'').slice(0,140)}…</div>
-        ${e.webLink?'<div style="font-size:11px;color:#555;margin-top:6px;">↗ Open in Outlook</div>':''}
-      </div>`).join('')
-    : '<div class="empty-state">No recent emails found</div>';
-
-  const calls = state.calls[name]||[];
-  document.getElementById('calls-list').innerHTML = calls.length
-    ? calls.map(r=>{
-        const dir=(r.direction||'').toLowerCase();
-        const dot=dir==='inbound'?'dot-in':dir==='outbound'?'dot-out':'dot-missed';
-        const mins=Math.floor((r.duration||0)/60), secs=(r.duration||0)%60;
-        return `<div class="call-item">
-          <div class="call-dot ${dot}"></div>
-          <span class="call-dir">${r.direction||'—'}</span>
-          <span class="call-dur">${mins}m ${secs}s${r.result?' · '+r.result:''}</span>
-          <span class="call-date">${r.startTime?new Date(r.startTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):''}</span>
-        </div>`;
-      }).join('')
-    : '<div class="empty-state">No calls logged today</div>';
-
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
-  document.querySelector('.tab').classList.add('active');
-  document.getElementById('tab-notes').classList.add('active');
-}
-
-// ── AI Prep — routes through server ──────────
-async function generatePrep() {
-  const meetings = activeMeetings();
-  const m = meetings[state.selectedIdx];
-  if (!m) return;
-  const name = m.attendees?.[0] || m.title;
-  const c = state.candidates[name]||{};
-  const isTomorrow = state.currentDay === 'tomorrow';
-
-  document.getElementById('prep-title').textContent = `${isTomorrow?'Tomorrow Prep':'AI Prep'} · ${name.split(' ')[0]}`;
-  document.getElementById('prep-tips').innerHTML = '<div class="tip-loading">Generating prep notes…</div>';
-  document.getElementById('deeper-btn').style.display = 'none';
-
-  const emailContext = (state.emails[name]||[]).slice(0,3)
-    .map(e=>`- "${e.subject}" from ${e.from}: ${(e.preview||'').slice(0,200)}`)
-    .join('\n') || 'none';
-
-  const context = `Candidate: ${name}
-Title: ${c.title} at ${c.company}
-Stage: ${c.stage}
-Comp: ${c.salary}
-Tags: ${(c.tags||[]).join(', ')}
-Notes: ${c.notes}
-Recent emails:
-${emailContext}
-Calls logged: ${(state.calls[name]||[]).length}
-${isTomorrow?'This call is TOMORROW — focus on advance preparation.':''}`;
-
-  try {
-    const text = await aiCall(
-      'You are an expert P&C insurance recruiter assistant. Read the email content carefully for both business details (compensation, timelines, competing offers, decision blockers) and personal details (family, travel, life events) that would help build rapport or inform strategy. Return ONLY a JSON array of exactly 3 objects with keys "head" (3-5 word title) and "body" (1-2 sentences, specific and actionable). Prioritize insights drawn directly from the email content when available. No markdown, no preamble, raw JSON only.',
-      context
-    );
-    const tips = JSON.parse(text.replace(/```json|```/g,'').trim());
-    document.getElementById('prep-tips').innerHTML = tips.map(t=>`
-      <div class="tip">
-        <div class="tip-head">${t.head}</div>
-        <div class="tip-body">${t.body}</div>
-      </div>`).join('');
-    document.getElementById('deeper-btn').style.display = 'flex';
-  } catch(e) {
-    document.getElementById('prep-tips').innerHTML = `<div class="tip"><div class="tip-head">Ready</div><div class="tip-body">Review the notes and call history in the tabs above before this call.</div></div>`;
-    document.getElementById('deeper-btn').style.display = 'flex';
+  if (pathname === '/api/ai') {
+    res.writeHead(405, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Method Not Allowed - use POST' }));
+    return;
   }
-}
 
-function selectCandidate(idx) {
-  state.selectedIdx = idx;
-  renderSchedule();
-  renderCard();
-  generatePrep();
-}
-
-function switchTab(btn, id) {
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById(id).classList.add('active');
-}
-
-async function openModal() {
-  document.getElementById('modal').classList.add('open');
-  const meetings = activeMeetings();
-  const m = meetings[state.selectedIdx];
-  const name = m?.attendees?.[0]||m?.title||'Candidate';
-  const c = state.candidates[name]||{};
-  document.getElementById('modal-title').textContent = `Full Prep · ${name}`;
-  document.getElementById('modal-body').innerHTML = '<div class="prep-loading">Generating detailed prep…</div>';
-
-  const context = `Candidate: ${name}\nTitle: ${c.title} at ${c.company}\nStage: ${c.stage}\nNotes: ${c.notes}\nEmails: ${(state.emails[name]||[]).map(e=>e.subject).join('; ')||'none'}`;
-
-  try {
-    const text = await aiCall(
-      'You are an expert P&C insurance recruiter coach. Write comprehensive call prep: opening approach, 3 key questions, likely objections and how to handle them, relevant P&C market context, and a suggested close. Be direct and specific. Use plain text with clear section headers separated by blank lines.',
-      context
-    );
-    document.getElementById('modal-body').innerHTML = text.split('\n\n').filter(Boolean)
-      .map(s=>`<div class="prep-block"><p>${s.replace(/\n/g,'<br>')}</p></div>`).join('');
-  } catch(e) {
-    document.getElementById('modal-body').innerHTML = '<div class="prep-block"><p>Could not generate. Try again in a moment.</p></div>';
+  if (pathname.startsWith('/api/')) {
+    try {
+      const data = await handleAPI(pathname, query);
+      if (data === null) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'API route not found' }));
+      } else {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(data));
+      }
+    } catch(e) {
+      console.error(`API error [${pathname}]:`, e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
   }
-}
-function closeModal() { document.getElementById('modal').classList.remove('open'); }
 
-function renderPipeline() {
-  if (!state.pipeline.length) return;
-  const max = Math.max(...state.pipeline.map(p=>p.count),1);
-  document.getElementById('pipeline-rows').innerHTML = state.pipeline.map(p=>`
-    <div class="pipe-row">
-      <span class="pipe-stage">${p.stage}</span>
-      <div class="pipe-track"><div class="pipe-fill" style="width:${Math.round(p.count/max*100)}%"></div></div>
-      <span class="pipe-count">${p.count}</span>
-    </div>`).join('');
-}
+  res.writeHead(404);
+  res.end('Not found');
+});
 
-async function loadAll() {
-  setSync(false);
-  document.getElementById('today-date').textContent = fmtDate(new Date()) + ' · P&C Insurance';
-  await Promise.all([loadCalendar(), loadCandidates()]);
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`\n✦ Recruiter Dashboard v3 running on port ${PORT}`);
+  console.log('Routes: GET /, GET /api/calendar, GET /api/calendar/tomorrow, GET /api/emails, GET /api/candidates, GET /api/calls, GET /api/zoom, POST /api/ai\n');
+});
 
-  const now = new Date();
-  const next = state.todayMeetings.findIndex(m=>new Date(m.start)>=now);
-  state.selectedIdx = next===-1 ? 0 : next;
-  document.getElementById('stat-today').textContent = state.todayMeetings.length;
-  document.getElementById('stat-open').textContent = '11';
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received — uptime: ' + process.uptime() + 's, memory: ' + JSON.stringify(process.memoryUsage()));
+  process.exit(0);
+});
 
-  renderSchedule();
-  renderPipeline();
-  renderCard();
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err.message, err.stack);
+});
 
-  const names = state.todayMeetings.map(m=>m.attendees?.[0]||m.title);
-  await Promise.all(names.flatMap(n=>[loadEmails(n),loadCalls(n)]));
-  renderCard();
-  generatePrep();
-  setSync(true);
-}
-
-loadAll();
-</script>
-</body>
-</html>
+process.on('unhandledRejection', (reason) => {
+  console.error('UNHANDLED REJECTION:', reason);
+});
