@@ -287,9 +287,14 @@ async function loadCandidates() {
         const name = `${c.first_name||''} ${c.last_name||''}`.trim();
         const emailArr = Array.isArray(c.email) ? c.email : (c.email ? [c.email] : []);
         const phoneArr = Array.isArray(c.phone_number) ? c.phone_number : (c.phone_number ? [c.phone_number] : []);
-        // Notes: RecruiterFlow stores rich note history; use candidate_summary as fallback readable note
-        const noteText = (Array.isArray(c.notes) && c.notes.length)
-          ? c.notes.map(n => n.text || n.note || '').filter(Boolean).join(' | ')
+        // RecruiterFlow stores manually-added notes inside upcoming_activities.tasks[].data.notes
+        // (the direct candidate.notes field is essentially always empty)
+        const taskNotes = (c.upcoming_activities?.tasks || [])
+          .map(t => t.data?.notes || '')
+          .filter(Boolean)
+          .map(n => n.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim());
+        const noteText = taskNotes.length
+          ? taskNotes.join(' | ')
           : (c.candidate_summary ? c.candidate_summary.replace(/<[^>]*>/g,'').trim() : '');
         // Stage comes from jobs[].stage_name if present
         const stage = (c.jobs && c.jobs[0] && c.jobs[0].stage_name) || '';
@@ -302,7 +307,8 @@ async function loadCandidates() {
           linkedin: c.linkedin_profile ? `https://linkedin.com/in/${c.linkedin_profile}` : (c.linkedin_url || ''),
           stage: stage || c.status || '',
           notes: noteText || 'No notes on file.',
-          salary: c.salary || c.expected_salary || '',
+          location: c.location?.location || c.location?.city || '',
+          source: c.source_name || '',
           tags: c.tags || []
         };
       });
@@ -483,9 +489,9 @@ function renderCard() {
 
   document.getElementById('info-row').innerHTML = `
     <div class="info-cell"><div class="info-label">Stage</div><div class="info-val">${c.stage||'—'}</div></div>
-    <div class="info-cell"><div class="info-label">Compensation</div><div class="info-val">${c.salary||'—'}</div></div>
+    <div class="info-cell"><div class="info-label">Location</div><div class="info-val">${c.location||'—'}</div></div>
     <div class="info-cell"><div class="info-label">Meeting</div><div class="info-val">${fmtTime(m.start)}</div></div>
-    <div class="info-cell"><div class="info-label">Email</div><div class="info-val">${c.email||'—'}</div></div>`;
+    <div class="info-cell"><div class="info-label">Source</div><div class="info-val">${c.source||'—'}</div></div>`;
 
   document.getElementById('notes-text').textContent = c.notes || 'No notes on file.';
 
