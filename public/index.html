@@ -40,6 +40,7 @@
   @keyframes shellFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
   .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; padding-bottom: 1.25rem; border-bottom: 1px solid #1a1a1a; }
+  .topbar-left-group { display: flex; align-items: center; gap: 28px; }
   .brand { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 14px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; position: relative; display: inline-block; padding-bottom: 8px; }
   .brand::after {
     content: ''; position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
@@ -54,14 +55,15 @@
 
   /* Weather chip — top of header, visually shifts personality based on live conditions */
   .weather-chip {
-    display: flex; align-items: center; gap: 16px; padding: 16px 26px;
+    display: flex; align-items: center; gap: 18px; padding: 14px 24px 14px 14px;
     border-radius: 18px; background: #0d0d0d; border: 1px solid #1e1e1e;
     transition: all 0.6s ease;
   }
-  .weather-chip-icon { width: 64px; height: 64px; flex-shrink: 0; }
+  .weather-chip-icon { width: 80px; height: 80px; flex-shrink: 0; }
   .weather-chip-icon svg { width: 100%; height: 100%; }
-  .weather-chip-temp { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 30px; font-weight: 700; color: #fff; line-height: 1; }
-  .weather-chip-desc { font-size: 13px; color: #888; margin-top: 4px; letter-spacing: 0.02em; }
+  .weather-chip-temp { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 32px; font-weight: 700; color: #fff; line-height: 1; }
+  .weather-chip-desc { font-size: 14px; color: #999; margin-top: 4px; letter-spacing: 0.02em; }
+  .weather-chip-sub { font-size: 12px; color: #555; margin-top: 3px; }
 
   /* Clear / sunny */
   .weather-chip.wx-clear { background: linear-gradient(135deg, rgba(255,180,60,0.14), #0d0d0d 65%); border-color: rgba(255,180,60,0.35); }
@@ -359,15 +361,18 @@
 
 
 <div class="topbar">
-  <div>
-    <div class="brand">MGMT Global <span class="brand-star">★</span></div>
-    <div class="topbar-date" id="today-date">Loading…</div>
-  </div>
-  <div class="weather-chip" id="weather-chip">
-    <div class="weather-chip-icon" id="weather-chip-icon">⛅</div>
+  <div class="topbar-left-group">
     <div>
-      <div class="weather-chip-temp" id="weather-chip-temp">—°</div>
-      <div class="weather-chip-desc" id="weather-chip-desc">Celina, TX</div>
+      <div class="brand">MGMT Global <span class="brand-star">★</span></div>
+      <div class="topbar-date" id="today-date">Loading…</div>
+    </div>
+    <div class="weather-chip" id="weather-chip">
+      <div class="weather-chip-icon" id="weather-chip-icon">⛅</div>
+      <div>
+        <div class="weather-chip-temp" id="weather-chip-temp">—°</div>
+        <div class="weather-chip-desc" id="weather-chip-desc">Celina, TX</div>
+        <div class="weather-chip-sub" id="weather-chip-sub"></div>
+      </div>
     </div>
   </div>
   <div class="stats-row">
@@ -1138,70 +1143,71 @@ const WEATHER_CODES = {
 // A little stick figure whose activity changes with the weather — mowing the lawn when it's
 // clear, shrugging under a cloud, holding an umbrella in the rain, shoveling snow, and bracing
 // against the wind with a flipped umbrella when a storm's rolling through.
-const WX_FIGURE_CLEAR = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-  <line x1="6" y1="58" x2="58" y2="58" stroke="#3a3020" stroke-width="2"/>
-  <circle cx="26" cy="13" r="5" fill="none" stroke="#d8d0c0" stroke-width="3"/>
-  <path d="M26 18 L35 33" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M35 33 L30 57" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M35 33 L44 52" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M29 24 L45 31" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M31 27 L45 35" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <line x1="45" y1="31" x2="54" y2="40" stroke="#8a8060" stroke-width="2.5"/>
-  <rect x="46" y="40" width="15" height="9" rx="2" fill="#00d084"/>
-  <circle cx="49" cy="52" r="3" fill="#0a5c38"/>
-  <circle cx="58" cy="52" r="3" fill="#0a5c38"/>
+const WX_FIGURE_CLEAR = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <line x1="6" y1="90" x2="94" y2="90" stroke="#3a3020" stroke-width="3"/>
+  <circle cx="32" cy="20" r="10" fill="none" stroke="#e8e0d0" stroke-width="6"/>
+  <path d="M32 30 L48 54" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M48 54 L40 89" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M48 54 L64 74 L70 89" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M36 38 L66 48" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <line x1="66" y1="48" x2="80" y2="62" stroke="#9a8560" stroke-width="5" stroke-linecap="round"/>
+  <rect x="68" y="62" width="26" height="16" rx="4" fill="#00d084"/>
+  <circle cx="74" cy="82" r="6" fill="#065c3a"/>
+  <circle cx="88" cy="82" r="6" fill="#065c3a"/>
 </svg>`;
 
-const WX_FIGURE_CLOUDY = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-  <ellipse cx="22" cy="14" rx="12" ry="7" fill="#8a95a8" opacity="0.7"/>
-  <circle cx="32" cy="26" r="5" fill="none" stroke="#d8d0c0" stroke-width="3"/>
-  <path d="M32 31 L32 48" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M32 48 L25 58" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M32 48 L39 58" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M32 35 L21 30" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M32 35 L43 30" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <line x1="6" y1="58" x2="58" y2="58" stroke="#2a2e38" stroke-width="2"/>
+const WX_FIGURE_CLOUDY = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <ellipse cx="50" cy="18" rx="24" ry="12" fill="#9aa5b8"/>
+  <circle cx="35" cy="14" r="10" fill="#9aa5b8"/>
+  <circle cx="63" cy="14" r="9" fill="#9aa5b8"/>
+  <circle cx="50" cy="42" r="10" fill="none" stroke="#e8e0d0" stroke-width="6"/>
+  <path d="M50 52 L50 78" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M50 78 L38 90" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M50 78 L62 90" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M50 58 L30 50" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M50 58 L70 50" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <line x1="6" y1="90" x2="94" y2="90" stroke="#2a2e38" stroke-width="3"/>
 </svg>`;
 
-const WX_FIGURE_RAIN = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-  <line x1="14" y1="10" x2="10" y2="18" stroke="#4a90ff" stroke-width="2" stroke-linecap="round"/>
-  <line x1="50" y1="8" x2="46" y2="16" stroke="#4a90ff" stroke-width="2" stroke-linecap="round"/>
-  <line x1="6" y1="22" x2="2" y2="30" stroke="#4a90ff" stroke-width="2" stroke-linecap="round"/>
-  <path d="M32 20 Q18 20 18 30 L46 30 Q46 20 32 20 Z" fill="#4a90ff"/>
-  <line x1="32" y1="20" x2="32" y2="12" stroke="#8a8060" stroke-width="2"/>
-  <line x1="32" y1="30" x2="32" y2="38" stroke="#d8d0c0" stroke-width="3"/>
-  <circle cx="32" cy="42" r="5" fill="none" stroke="#d8d0c0" stroke-width="3"/>
-  <path d="M32 47 L32 54" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M32 54 L26 58" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M32 54 L38 58" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <line x1="6" y1="58" x2="58" y2="58" stroke="#1a2a3a" stroke-width="2"/>
+const WX_FIGURE_RAIN = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <line x1="18" y1="8" x2="12" y2="22" stroke="#4a90ff" stroke-width="4" stroke-linecap="round"/>
+  <line x1="78" y1="6" x2="72" y2="20" stroke="#4a90ff" stroke-width="4" stroke-linecap="round"/>
+  <line x1="8" y1="30" x2="2" y2="44" stroke="#4a90ff" stroke-width="4" stroke-linecap="round"/>
+  <path d="M18 46 Q18 20 50 20 Q82 20 82 46 Z" fill="#3d8bff"/>
+  <rect x="47" y="20" width="6" height="10" rx="2" fill="#2a6fd8"/>
+  <line x1="50" y1="46" x2="50" y2="60" stroke="#e8e0d0" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="50" cy="70" r="10" fill="none" stroke="#e8e0d0" stroke-width="6"/>
+  <path d="M50 80 L50 90" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M50 90 L40 96" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M50 90 L60 96" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <line x1="6" y1="96" x2="94" y2="96" stroke="#1a2a3a" stroke-width="3"/>
 </svg>`;
 
-const WX_FIGURE_SNOW = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="12" cy="14" r="1.6" fill="#c9d2de"/>
-  <circle cx="50" cy="10" r="1.6" fill="#c9d2de"/>
-  <circle cx="46" cy="22" r="1.6" fill="#c9d2de"/>
-  <circle cx="30" cy="14" r="5" fill="none" stroke="#d8d0c0" stroke-width="3"/>
-  <path d="M30 19 L34 34" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M34 34 L28 57" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M34 34 L42 52" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M28 26 L44 33" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <line x1="44" y1="33" x2="52" y2="46" stroke="#8a8060" stroke-width="2.5"/>
-  <path d="M48 44 L58 40 L56 48 Z" fill="#c9d2de"/>
-  <ellipse cx="20" cy="57" rx="14" ry="4" fill="#c9d2de" opacity="0.5"/>
-  <line x1="4" y1="58" x2="60" y2="58" stroke="#2a3040" stroke-width="2"/>
+const WX_FIGURE_SNOW = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="16" cy="16" r="2.4" fill="#c9d2de"/>
+  <circle cx="80" cy="10" r="2.4" fill="#c9d2de"/>
+  <circle cx="72" cy="26" r="2.4" fill="#c9d2de"/>
+  <circle cx="36" cy="20" r="10" fill="none" stroke="#e8e0d0" stroke-width="6"/>
+  <path d="M36 30 L48 54" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M48 54 L38 89" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M48 54 L64 74 L70 89" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M34 42 L64 52" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <line x1="64" y1="52" x2="78" y2="66" stroke="#9a8560" stroke-width="5" stroke-linecap="round"/>
+  <path d="M72 70 L94 62 L98 74 L76 82 Z" fill="#c9d2de"/>
+  <ellipse cx="30" cy="90" rx="22" ry="6" fill="#c9d2de" opacity="0.55"/>
+  <line x1="4" y1="90" x2="96" y2="90" stroke="#2a3040" stroke-width="3"/>
 </svg>`;
 
-const WX_FIGURE_STORM = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-  <path d="M50 6 L44 16 L50 16 L42 28" stroke="#ff8078" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M20 22 Q28 26 36 22 Q30 30 22 30 Q14 28 20 22 Z" fill="#ff453a" transform="rotate(20 28 26)"/>
-  <line x1="28" y1="26" x2="24" y2="16" stroke="#8a8060" stroke-width="2" transform="rotate(20 28 26)"/>
-  <circle cx="27" cy="34" r="5" fill="none" stroke="#d8d0c0" stroke-width="3" transform="rotate(-8 27 34)"/>
-  <path d="M28 39 L24 54" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M24 54 L17 58" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M24 54 L32 58" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <path d="M26 42 L18 32" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
-  <line x1="4" y1="58" x2="58" y2="58" stroke="#3a1518" stroke-width="2"/>
+const WX_FIGURE_STORM = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <path d="M80 6 L68 28 L78 28 L62 52 L74 30 L64 30 Z" fill="#ff5b52"/>
+  <path d="M20 30 L52 40 L34 46 L14 40 Z" fill="#ff453a" transform="rotate(18 33 38)"/>
+  <line x1="33" y1="38" x2="27" y2="20" stroke="#9a8560" stroke-width="5" stroke-linecap="round" transform="rotate(18 33 38)"/>
+  <circle cx="34" cy="46" r="10" fill="none" stroke="#e8e0d0" stroke-width="6" transform="rotate(-12 34 46)"/>
+  <path d="M36 56 L28 84" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M28 84 L16 92" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M28 84 L42 92" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M32 62 L20 46" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <line x1="4" y1="92" x2="94" y2="92" stroke="#3a1518" stroke-width="3"/>
 </svg>`;
 
 // Map each weather code to a visual category so the chip's whole personality shifts with conditions
@@ -1224,6 +1230,7 @@ async function loadWeather() {
     const alertsData = await alertsRes.json();
 
     const temp = Math.round(current.current?.temperature_2m ?? 0);
+    const wind = Math.round(current.current?.wind_speed_10m ?? 0);
     const code = current.current?.weather_code;
     const desc = WEATHER_CODES[code] || 'Celina, TX';
     const alerts = (alertsData.features || []).filter(f => f.properties?.severity !== 'Unknown');
@@ -1234,6 +1241,7 @@ async function loadWeather() {
     document.getElementById('weather-chip-icon').innerHTML = cat.figure;
     document.getElementById('weather-chip-temp').textContent = `${temp}°`;
     document.getElementById('weather-chip-desc').textContent = alerts.length ? `⚠ ${alerts[0].properties.event}` : desc;
+    document.getElementById('weather-chip-sub').textContent = `Celina, TX · 💨 ${wind} mph`;
 
     const stripEl = document.getElementById('weather-alert-strip');
     if (alerts.length) {
