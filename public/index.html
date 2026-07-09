@@ -670,23 +670,32 @@ async function loadEmails(name) {
   } catch(e) { state.emails[name] = []; }
 }
 
-async function loadCalls(name) {
+let _allCallRecords = null;
+
+async function fetchAllCallsOnce() {
+  if (_allCallRecords) return _allCallRecords;
   try {
     const data = await apiFetch('/api/calls');
-    const candidate = findCandidate(name);
-    const candidatePhone = candidate?.phone ? candidate.phone.replace(/\D/g,'').slice(-10) : '';
-    const first = name.split(' ')[0].toLowerCase();
-    state.calls[name] = (data.records||[])
-      .filter(r => {
-        const toPhone = (r.to?.phoneNumber||'').replace(/\D/g,'').slice(-10);
-        const fromPhone = (r.from?.phoneNumber||'').replace(/\D/g,'').slice(-10);
-        const toName = (r.to?.name||'').toLowerCase();
-        const fromName = (r.from?.name||'').toLowerCase();
-        return (candidatePhone && (toPhone === candidatePhone || fromPhone === candidatePhone))
-          || toName.includes(first) || fromName.includes(first);
-      })
-      .map(r=>({ direction:r.direction, duration:r.duration, startTime:r.startTime, result:r.result }));
-  } catch(e) { state.calls[name]=[]; }
+    _allCallRecords = data.records || [];
+  } catch(e) { _allCallRecords = []; }
+  return _allCallRecords;
+}
+
+async function loadCalls(name) {
+  const records = await fetchAllCallsOnce();
+  const candidate = findCandidate(name);
+  const candidatePhone = candidate?.phone ? candidate.phone.replace(/\D/g,'').slice(-10) : '';
+  const first = name.split(' ')[0].toLowerCase();
+  state.calls[name] = records
+    .filter(r => {
+      const toPhone = (r.to?.phoneNumber||'').replace(/\D/g,'').slice(-10);
+      const fromPhone = (r.from?.phoneNumber||'').replace(/\D/g,'').slice(-10);
+      const toName = (r.to?.name||'').toLowerCase();
+      const fromName = (r.from?.name||'').toLowerCase();
+      return (candidatePhone && (toPhone === candidatePhone || fromPhone === candidatePhone))
+        || toName.includes(first) || fromName.includes(first);
+    })
+    .map(r=>({ direction:r.direction, duration:r.duration, startTime:r.startTime, result:r.result }));
 }
 
 // ── Demo fallbacks ────────────────────────────
@@ -990,6 +999,7 @@ async function loadNews() {
 async function loadAll() {
   setSync(false);
   document.getElementById('today-date').textContent = fmtDate(new Date()) + ' · P&C Insurance';
+  _allCallRecords = null; // force one fresh call-log fetch per page load
   await Promise.all([loadCalendar(), loadCandidates(), loadNews()]);
 
   const now = new Date();
