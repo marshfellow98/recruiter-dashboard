@@ -23,7 +23,6 @@ const CONFIG = {
 };
 
 const tokens = { ms: null, zoom: null, rc: null, msExpiry: null };
-const cache = { candidates: null, candidatesExpiry: 0, calls: null, callsExpiry: 0 };
 
 function fetchJSON(options, body) {
   return new Promise((resolve, reject) => {
@@ -200,28 +199,8 @@ async function handleAPI(pathname, query) {
 
   if (pathname === '/api/emails') {
     const token = await getMSToken();
-    const email = query.email || '';
     const name = query.name || '';
-
-    if (email) {
-      // Deterministic exact-match filter by email address — reliable, unlike $search
-      // which Microsoft documents as "eventual consistency" and can vary between identical requests.
-      const filter = `from/emailAddress/address eq '${email.replace(/'/g,"''")}' or toRecipients/any(r:r/emailAddress/address eq '${email.replace(/'/g,"''")}')`;
-      const res = await fetchJSON({
-        hostname: 'graph.microsoft.com',
-        path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$filter=${encodeURIComponent(filter)}&$select=subject,from,receivedDateTime,bodyPreview,webLink&$orderby=receivedDateTime desc&$top=5`,
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'ConsistencyLevel': 'eventual'
-        }
-      });
-      if (res.status === 200) return res.body;
-      // fall through to name search below if the filter request itself errors
-    }
-
-    // Fallback: name-based search (used only if no email on file for this candidate)
-    const res2 = await fetchJSON({
+    const res = await fetchJSON({
       hostname: 'graph.microsoft.com',
       path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$search="${encodeURIComponent(name)}"&$select=subject,from,receivedDateTime,bodyPreview,webLink&$top=5`,
       method: 'GET',
@@ -230,26 +209,20 @@ async function handleAPI(pathname, query) {
         'ConsistencyLevel': 'eventual'
       }
     });
-    return res2.body;
+    return res.body;
   }
 
   if (pathname === '/api/candidates') {
-    if (cache.candidates && Date.now() < cache.candidatesExpiry) return cache.candidates;
     const res = await fetchJSON({
       hostname: 'recruiterflow.com',
       path: '/api/external/candidate/list?current_page=1&items_per_page=100',
       method: 'GET',
       headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
     });
-    if (res.status === 200) {
-      cache.candidates = res.body;
-      cache.candidatesExpiry = Date.now() + 30000; // 30s cache
-    }
     return res.body;
   }
 
   if (pathname === '/api/calls') {
-    if (cache.calls && Date.now() < cache.callsExpiry) return cache.calls;
     const token = await getRCToken();
     const today = new Date().toISOString().split('T')[0];
     const res = await fetchJSON({
@@ -258,10 +231,6 @@ async function handleAPI(pathname, query) {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    if (res.status === 200) {
-      cache.calls = res.body;
-      cache.callsExpiry = Date.now() + 30000; // 30s cache
-    }
     return res.body;
   }
 
