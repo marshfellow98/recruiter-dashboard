@@ -111,15 +111,38 @@
 
   .layout { display: grid; grid-template-columns: 1fr 280px; gap: 20px; }
 
-  /* Rotating gradient shimmer border — the signature "premium" frame around the active card */
-  .main-card-wrap { position: relative; border-radius: 22px; padding: 2px; }
-  .main-card-wrap::before {
-    content: ''; position: absolute; inset: 0; border-radius: 22px; z-index: 0;
-    background: conic-gradient(from 0deg, #00d084, #8a5cff, #c9d2de, #00d084);
-    animation: shimmerSpin 8s linear infinite;
-    opacity: 0.55;
+  /* Lava-lamp ambient blobs — soft, organic, strictly clipped so they never escape the card frame */
+  .main-card-wrap { position: relative; border-radius: 22px; padding: 2px; overflow: hidden; }
+  .lava-blob {
+    position: absolute; z-index: 0; border-radius: 50%; filter: blur(38px); pointer-events: none;
   }
-  @keyframes shimmerSpin { to { transform: rotate(360deg); } }
+  .lava-blob.b1 {
+    width: 220px; height: 220px; background: rgba(0,208,132,0.45); left: -60px; top: -40px;
+    animation: lavaDrift1 18s ease-in-out infinite;
+  }
+  .lava-blob.b2 {
+    width: 180px; height: 180px; background: rgba(138,92,255,0.4); right: -50px; bottom: -30px;
+    animation: lavaDrift2 22s ease-in-out infinite;
+  }
+  .lava-blob.b3 {
+    width: 160px; height: 160px; background: rgba(201,210,222,0.22); right: 20%; top: -50px;
+    animation: lavaDrift3 26s ease-in-out infinite;
+  }
+  @keyframes lavaDrift1 {
+    0%, 100% { transform: translate(0, 0) scale(1); border-radius: 50%; }
+    30% { transform: translate(40px, 30px) scale(1.15); border-radius: 45% 55% 60% 40%; }
+    60% { transform: translate(10px, 60px) scale(0.9); border-radius: 60% 40% 45% 55%; }
+  }
+  @keyframes lavaDrift2 {
+    0%, 100% { transform: translate(0, 0) scale(1); border-radius: 50%; }
+    35% { transform: translate(-30px, -40px) scale(1.1); border-radius: 55% 45% 40% 60%; }
+    70% { transform: translate(-50px, -10px) scale(0.95); border-radius: 40% 60% 55% 45%; }
+  }
+  @keyframes lavaDrift3 {
+    0%, 100% { transform: translate(0, 0) scale(1); border-radius: 50%; }
+    40% { transform: translate(-20px, 50px) scale(1.2); border-radius: 60% 40% 50% 50%; }
+    75% { transform: translate(30px, 20px) scale(0.85); border-radius: 45% 55% 40% 60%; }
+  }
   .main-card { position: relative; z-index: 1; background: rgba(8,8,10,0.88); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px; padding: 2rem; box-shadow: inset 0 1px 0 rgba(255,255,255,0.05); transition: box-shadow 0.4s ease; }
   .main-card.tomorrow-mode { border-color: #1e1e1e; }
   .cand-name { font-size: 52px; font-weight: 700; color: #fff; line-height: 1; letter-spacing: -0.02em; margin-bottom: 8px; }
@@ -314,6 +337,9 @@
 <div class="layout">
   <div>
     <div class="main-card-wrap">
+    <div class="lava-blob b1"></div>
+    <div class="lava-blob b2"></div>
+    <div class="lava-blob b3"></div>
     <div class="main-card" id="main-card">
       <div class="cand-name" id="cand-name">Loading…</div>
       <div class="cand-title" id="cand-title"></div>
