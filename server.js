@@ -23,6 +23,7 @@ const CONFIG = {
 };
 
 const tokens = { ms: null, zoom: null, rc: null, msExpiry: null };
+const callsCache = { data: null, expiry: 0 };
 
 function fetchJSON(options, body) {
   return new Promise((resolve, reject) => {
@@ -223,6 +224,7 @@ async function handleAPI(pathname, query) {
   }
 
   if (pathname === '/api/calls') {
+    if (callsCache.data && Date.now() < callsCache.expiry) return callsCache.data;
     const token = await getRCToken();
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -233,6 +235,10 @@ async function handleAPI(pathname, query) {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
+    if (res.status === 200) {
+      callsCache.data = res.body;
+      callsCache.expiry = Date.now() + 60000; // 60s — smooths over simultaneous refreshes from both users
+    }
     return res.body;
   }
 
