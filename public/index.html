@@ -31,6 +31,27 @@
   .tomorrow-banner strong { color: #fff; }
 
   .schedule-strip { display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 4px; }
+
+  /* ── Industry Pulse — news carousel ── */
+  .news-section { margin-bottom: 20px; }
+  .news-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .news-header .pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: #00d084; box-shadow: 0 0 6px #00d084; animation: newsPulse 2s infinite; }
+  @keyframes newsPulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+  .news-title { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #666; }
+  .news-carousel { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; }
+  .news-carousel::-webkit-scrollbar { height: 4px; }
+  .news-carousel::-webkit-scrollbar-thumb { background: #222; border-radius: 2px; }
+  .news-card {
+    flex-shrink: 0; width: 260px; scroll-snap-align: start;
+    background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 14px;
+    padding: 16px; cursor: pointer; text-decoration: none; display: block;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .news-card:hover { border-color: #333; transform: translateY(-2px); }
+  .news-source { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #00d084; margin-bottom: 8px; }
+  .news-headline { font-size: 14px; font-weight: 600; color: #eee; line-height: 1.4; margin-bottom: 10px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .news-time { font-size: 11px; color: #444; }
+  .news-empty { font-size: 13px; color: #333; font-style: italic; padding: 12px 4px; }
   .sched-item { flex-shrink: 0; padding: 14px 20px; border-radius: 12px; cursor: pointer; border: 1.5px solid #1a1a1a; background: #0a0a0a; min-width: 150px; transition: all 0.2s; }
   .sched-item:hover { border-color: #333; }
   .sched-item.active { background: #fff; border-color: #fff; }
@@ -192,6 +213,17 @@
     <div class="stat"><div class="stat-val" id="stat-placed">—</div><div class="stat-label">Placed</div></div>
     <div class="sync-dot loading" id="sync-dot"></div>
     <button onclick="loadAll()" style="background:#141414;border:1px solid #252525;color:#666;border-radius:8px;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:0.05em;cursor:pointer;font-family:'Inter',sans-serif;">↻ Refresh</button>
+  </div>
+</div>
+
+<!-- Industry Pulse — P&C insurance news carousel, items expire after 48h -->
+<div class="news-section">
+  <div class="news-header">
+    <div class="pulse-dot"></div>
+    <div class="news-title">Industry Pulse</div>
+  </div>
+  <div class="news-carousel" id="news-carousel">
+    <div class="news-empty">Loading industry news…</div>
   </div>
 </div>
 
@@ -902,10 +934,44 @@ function renderPipeline() {
     </div>`).join('');
 }
 
+// ── Industry Pulse — news carousel ────────────
+function relativeTime(pubDate) {
+  const mins = Math.floor((Date.now() - new Date(pubDate)) / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+async function loadNews() {
+  try {
+    const data = await apiFetch('/api/news');
+    const items = data.items || [];
+    const carousel = document.getElementById('news-carousel');
+    if (!items.length) {
+      carousel.innerHTML = '<div class="news-empty">No fresh industry news in the last 48 hours.</div>';
+      return;
+    }
+    carousel.innerHTML = items.map(item => {
+      // Fade older stories as they approach the 48-hour expiry — a visual cue they're about to age out
+      const ageHrs = (Date.now() - new Date(item.pubDate)) / 3600000;
+      const opacity = Math.max(0.45, 1 - (ageHrs / 48) * 0.6);
+      return `<a class="news-card" href="${item.link}" target="_blank" style="opacity:${opacity.toFixed(2)}">
+        <div class="news-source">${item.source}</div>
+        <div class="news-headline">${item.title}</div>
+        <div class="news-time">${relativeTime(item.pubDate)}</div>
+      </a>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('news-carousel').innerHTML = '<div class="news-empty">Could not load industry news right now.</div>';
+  }
+}
+
 async function loadAll() {
   setSync(false);
   document.getElementById('today-date').textContent = fmtDate(new Date()) + ' · P&C Insurance';
-  await Promise.all([loadCalendar(), loadCandidates()]);
+  await Promise.all([loadCalendar(), loadCandidates(), loadNews()]);
 
   const now = new Date();
   const next = state.todayMeetings.findIndex(m=>parseGraphDate(m.start)>=now);
@@ -939,6 +1005,7 @@ async function loadAll() {
 
 loadAll();
 setInterval(checkMeetingAlerts, 15000); // check every 15 seconds
+setInterval(loadNews, 15 * 60000); // refresh industry news every 15 minutes
 </script>
 </body>
 </html>
