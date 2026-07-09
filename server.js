@@ -247,9 +247,27 @@ async function handleAPI(pathname, query) {
     return res.body;
   }
 
+  if (pathname === '/api/debug/news') {
+    const feeds = [
+      { hostname: 'www.insurancejournal.com', path: '/rss/news', source: 'Insurance Journal' },
+      { hostname: 'www.claimsjournal.com', path: '/feed', source: 'Claims Journal' }
+    ];
+    const debug = [];
+    for (const feed of feeds) {
+      try {
+        const xml = await fetchText(feed.hostname, feed.path);
+        const items = parseRssItems(xml, feed.source);
+        debug.push({ source: feed.source, xmlLength: xml.length, xmlStart: xml.slice(0, 200), itemCount: items.length, firstItem: items[0] || null });
+      } catch(e) {
+        debug.push({ source: feed.source, error: e.message });
+      }
+    }
+    return { debug };
+  }
+
   if (pathname === '/api/news') {
     const feeds = [
-      { hostname: 'www.insurancejournal.com', path: '/feed', source: 'Insurance Journal' },
+      { hostname: 'www.insurancejournal.com', path: '/rss/news', source: 'Insurance Journal' },
       { hostname: 'www.claimsjournal.com', path: '/feed', source: 'Claims Journal' }
     ];
     const allItems = [];
@@ -275,9 +293,15 @@ async function handleAPI(pathname, query) {
 }
 
 // ── Plain HTTPS GET returning raw text (for RSS feeds) ───
-function fetchText(hostname, path) {
+function fetchText(hostname, path, redirectCount = 0) {
   return new Promise((resolve, reject) => {
+    if (redirectCount > 3) return reject(new Error('Too many redirects'));
     const req = https.request({ hostname, path, method: 'GET', headers: { 'User-Agent': 'RecruiterDashboard/1.0' } }, res => {
+      if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
+        const loc = new URL(res.headers.location, `https://${hostname}${path}`);
+        res.resume(); // drain response
+        return resolve(fetchText(loc.hostname, loc.pathname + loc.search, redirectCount + 1));
+      }
       let data = '';
       res.on('data', d => data += d);
       res.on('end', () => resolve(data));
