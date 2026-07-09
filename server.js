@@ -224,10 +224,12 @@ async function handleAPI(pathname, query) {
 
   if (pathname === '/api/calls') {
     const token = await getRCToken();
-    const today = new Date().toISOString().split('T')[0];
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const dateFrom = sevenDaysAgo.toISOString().split('T')[0];
     const res = await fetchJSON({
       hostname: 'platform.ringcentral.com',
-      path: `/restapi/v1.0/account/~/call-log?type=Voice&dateFrom=${today}T00:00:00Z&perPage=20`,
+      path: `/restapi/v1.0/account/~/call-log?type=Voice&dateFrom=${dateFrom}T00:00:00Z&perPage=100`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
