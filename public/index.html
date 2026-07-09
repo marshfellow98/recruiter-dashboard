@@ -604,12 +604,7 @@ async function loadCandidates() {
 
 async function loadEmails(name) {
   try {
-    const candidate = findCandidate(name);
-    const email = candidate?.email || '';
-    const url = email
-      ? `/api/emails?name=${encodeURIComponent(name)}&email=${encodeURIComponent(email)}`
-      : `/api/emails?name=${encodeURIComponent(name)}`;
-    const data = await apiFetch(url);
+    const data = await apiFetch(`/api/emails?name=${encodeURIComponent(name)}`);
     state.emails[name] = (data.value||[]).map(m=>({
       subject: m.subject||'(no subject)',
       from: m.from?.emailAddress?.name||m.from?.emailAddress?.address||'Unknown',
@@ -619,36 +614,23 @@ async function loadEmails(name) {
   } catch(e) { state.emails[name] = []; }
 }
 
-let _allCallRecords = null;
-
-async function fetchAllCallsOnce() {
-  if (_allCallRecords) return _allCallRecords;
+async function loadCalls(name) {
   try {
     const data = await apiFetch('/api/calls');
-    _allCallRecords = data.records || [];
-  } catch(e) { _allCallRecords = []; }
-  return _allCallRecords;
-}
-
-function matchCallsForCandidate(name, records) {
-  const candidate = findCandidate(name);
-  const candidatePhone = candidate?.phone ? candidate.phone.replace(/\D/g,'').slice(-10) : '';
-  const first = name.split(' ')[0].toLowerCase();
-  return records
-    .filter(r => {
-      const toPhone = (r.to?.phoneNumber||'').replace(/\D/g,'').slice(-10);
-      const fromPhone = (r.from?.phoneNumber||'').replace(/\D/g,'').slice(-10);
-      const toName = (r.to?.name||'').toLowerCase();
-      const fromName = (r.from?.name||'').toLowerCase();
-      return (candidatePhone && (toPhone === candidatePhone || fromPhone === candidatePhone))
-        || toName.includes(first) || fromName.includes(first);
-    })
-    .map(r=>({ direction:r.direction, duration:r.duration, startTime:r.startTime, result:r.result }));
-}
-
-async function loadCalls(name) {
-  const records = await fetchAllCallsOnce();
-  state.calls[name] = matchCallsForCandidate(name, records);
+    const candidate = findCandidate(name);
+    const candidatePhone = candidate?.phone ? candidate.phone.replace(/\D/g,'').slice(-10) : '';
+    const first = name.split(' ')[0].toLowerCase();
+    state.calls[name] = (data.records||[])
+      .filter(r => {
+        const toPhone = (r.to?.phoneNumber||'').replace(/\D/g,'').slice(-10);
+        const fromPhone = (r.from?.phoneNumber||'').replace(/\D/g,'').slice(-10);
+        const toName = (r.to?.name||'').toLowerCase();
+        const fromName = (r.from?.name||'').toLowerCase();
+        return (candidatePhone && (toPhone === candidatePhone || fromPhone === candidatePhone))
+          || toName.includes(first) || fromName.includes(first);
+      })
+      .map(r=>({ direction:r.direction, duration:r.duration, startTime:r.startTime, result:r.result }));
+  } catch(e) { state.calls[name]=[]; }
 }
 
 // ── Demo fallbacks ────────────────────────────
@@ -918,7 +900,6 @@ function renderPipeline() {
 async function loadAll() {
   setSync(false);
   document.getElementById('today-date').textContent = fmtDate(new Date()) + ' · P&C Insurance';
-  _allCallRecords = null; // force a fresh call log fetch on each full reload
   await Promise.all([loadCalendar(), loadCandidates()]);
 
   const now = new Date();
@@ -932,15 +913,7 @@ async function loadAll() {
   renderCard();
 
   const names = state.todayMeetings.map(m=>m.attendees?.[0]||m.title);
-  // Calls: one shared fetch regardless of how many candidates
-  await Promise.all(names.map(n=>loadCalls(n)));
-  // Emails: stagger slightly — Graph's $search endpoint is rate-sensitive and firing
-  // 6-8 searches at once for two people simultaneously is what was causing the misses
-  for (const n of names) {
-    await loadEmails(n);
-    renderCard();
-    await new Promise(r => setTimeout(r, 250));
-  }
+  await Promise.all(names.flatMap(n=>[loadEmails(n),loadCalls(n)]));
   renderCard();
   generatePrep();
   setSync(true);
