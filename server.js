@@ -23,6 +23,7 @@ const CONFIG = {
 };
 
 const tokens = { ms: null, zoom: null, rc: null, msExpiry: null };
+const cache = { candidates: null, candidatesExpiry: 0, calls: null, callsExpiry: 0 };
 
 function fetchJSON(options, body) {
   return new Promise((resolve, reject) => {
@@ -213,16 +214,22 @@ async function handleAPI(pathname, query) {
   }
 
   if (pathname === '/api/candidates') {
+    if (cache.candidates && Date.now() < cache.candidatesExpiry) return cache.candidates;
     const res = await fetchJSON({
       hostname: 'recruiterflow.com',
       path: '/api/external/candidate/list?current_page=1&items_per_page=100',
       method: 'GET',
       headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
     });
+    if (res.status === 200) {
+      cache.candidates = res.body;
+      cache.candidatesExpiry = Date.now() + 30000; // 30s cache
+    }
     return res.body;
   }
 
   if (pathname === '/api/calls') {
+    if (cache.calls && Date.now() < cache.callsExpiry) return cache.calls;
     const token = await getRCToken();
     const today = new Date().toISOString().split('T')[0];
     const res = await fetchJSON({
@@ -231,6 +238,10 @@ async function handleAPI(pathname, query) {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
+    if (res.status === 200) {
+      cache.calls = res.body;
+      cache.callsExpiry = Date.now() + 30000; // 30s cache
+    }
     return res.body;
   }
 
