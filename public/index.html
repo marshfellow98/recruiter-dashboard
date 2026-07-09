@@ -54,13 +54,14 @@
 
   /* Weather chip — top of header, visually shifts personality based on live conditions */
   .weather-chip {
-    display: flex; align-items: center; gap: 12px; padding: 10px 18px;
-    border-radius: 14px; background: #0d0d0d; border: 1px solid #1e1e1e;
+    display: flex; align-items: center; gap: 16px; padding: 16px 26px;
+    border-radius: 18px; background: #0d0d0d; border: 1px solid #1e1e1e;
     transition: all 0.6s ease;
   }
-  .weather-chip-icon { font-size: 30px; line-height: 1; }
-  .weather-chip-temp { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 22px; font-weight: 700; color: #fff; line-height: 1; }
-  .weather-chip-desc { font-size: 11px; color: #666; margin-top: 2px; letter-spacing: 0.02em; }
+  .weather-chip-icon { width: 64px; height: 64px; flex-shrink: 0; }
+  .weather-chip-icon svg { width: 100%; height: 100%; }
+  .weather-chip-temp { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 30px; font-weight: 700; color: #fff; line-height: 1; }
+  .weather-chip-desc { font-size: 13px; color: #888; margin-top: 4px; letter-spacing: 0.02em; }
 
   /* Clear / sunny */
   .weather-chip.wx-clear { background: linear-gradient(135deg, rgba(255,180,60,0.14), #0d0d0d 65%); border-color: rgba(255,180,60,0.35); }
@@ -79,8 +80,8 @@
 
   /* Snow */
   .weather-chip.wx-snow { background: linear-gradient(135deg, rgba(201,210,222,0.16), #0d0d0d 65%); border-color: rgba(201,210,222,0.35); }
-  .weather-chip.wx-snow .weather-chip-icon { animation: wxSpin 6s linear infinite; }
-  @keyframes wxSpin { to { transform: rotate(360deg); } }
+  .weather-chip.wx-snow .weather-chip-icon { animation: wxShovel 2s ease-in-out infinite; }
+  @keyframes wxShovel { 0%,100%{ transform: rotate(0deg); } 50%{ transform: rotate(-6deg); } }
 
   /* Storm — matches the severity language used elsewhere in the dashboard */
   .weather-chip.wx-storm { background: linear-gradient(135deg, rgba(255,69,58,0.18), #0d0d0d 65%); border-color: rgba(255,69,58,0.5); animation: wxStormPulse 1.8s ease-in-out infinite; }
@@ -1134,13 +1135,82 @@ const WEATHER_CODES = {
   95:'Thunderstorm', 96:'Thunderstorm w/ hail', 99:'Severe thunderstorm w/ hail'
 };
 
+// A little stick figure whose activity changes with the weather — mowing the lawn when it's
+// clear, shrugging under a cloud, holding an umbrella in the rain, shoveling snow, and bracing
+// against the wind with a flipped umbrella when a storm's rolling through.
+const WX_FIGURE_CLEAR = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <line x1="6" y1="58" x2="58" y2="58" stroke="#3a3020" stroke-width="2"/>
+  <circle cx="26" cy="13" r="5" fill="none" stroke="#d8d0c0" stroke-width="3"/>
+  <path d="M26 18 L35 33" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M35 33 L30 57" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M35 33 L44 52" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M29 24 L45 31" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M31 27 L45 35" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <line x1="45" y1="31" x2="54" y2="40" stroke="#8a8060" stroke-width="2.5"/>
+  <rect x="46" y="40" width="15" height="9" rx="2" fill="#00d084"/>
+  <circle cx="49" cy="52" r="3" fill="#0a5c38"/>
+  <circle cx="58" cy="52" r="3" fill="#0a5c38"/>
+</svg>`;
+
+const WX_FIGURE_CLOUDY = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <ellipse cx="22" cy="14" rx="12" ry="7" fill="#8a95a8" opacity="0.7"/>
+  <circle cx="32" cy="26" r="5" fill="none" stroke="#d8d0c0" stroke-width="3"/>
+  <path d="M32 31 L32 48" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M32 48 L25 58" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M32 48 L39 58" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M32 35 L21 30" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M32 35 L43 30" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <line x1="6" y1="58" x2="58" y2="58" stroke="#2a2e38" stroke-width="2"/>
+</svg>`;
+
+const WX_FIGURE_RAIN = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <line x1="14" y1="10" x2="10" y2="18" stroke="#4a90ff" stroke-width="2" stroke-linecap="round"/>
+  <line x1="50" y1="8" x2="46" y2="16" stroke="#4a90ff" stroke-width="2" stroke-linecap="round"/>
+  <line x1="6" y1="22" x2="2" y2="30" stroke="#4a90ff" stroke-width="2" stroke-linecap="round"/>
+  <path d="M32 20 Q18 20 18 30 L46 30 Q46 20 32 20 Z" fill="#4a90ff"/>
+  <line x1="32" y1="20" x2="32" y2="12" stroke="#8a8060" stroke-width="2"/>
+  <line x1="32" y1="30" x2="32" y2="38" stroke="#d8d0c0" stroke-width="3"/>
+  <circle cx="32" cy="42" r="5" fill="none" stroke="#d8d0c0" stroke-width="3"/>
+  <path d="M32 47 L32 54" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M32 54 L26 58" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M32 54 L38 58" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <line x1="6" y1="58" x2="58" y2="58" stroke="#1a2a3a" stroke-width="2"/>
+</svg>`;
+
+const WX_FIGURE_SNOW = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="12" cy="14" r="1.6" fill="#c9d2de"/>
+  <circle cx="50" cy="10" r="1.6" fill="#c9d2de"/>
+  <circle cx="46" cy="22" r="1.6" fill="#c9d2de"/>
+  <circle cx="30" cy="14" r="5" fill="none" stroke="#d8d0c0" stroke-width="3"/>
+  <path d="M30 19 L34 34" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M34 34 L28 57" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M34 34 L42 52" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M28 26 L44 33" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <line x1="44" y1="33" x2="52" y2="46" stroke="#8a8060" stroke-width="2.5"/>
+  <path d="M48 44 L58 40 L56 48 Z" fill="#c9d2de"/>
+  <ellipse cx="20" cy="57" rx="14" ry="4" fill="#c9d2de" opacity="0.5"/>
+  <line x1="4" y1="58" x2="60" y2="58" stroke="#2a3040" stroke-width="2"/>
+</svg>`;
+
+const WX_FIGURE_STORM = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <path d="M50 6 L44 16 L50 16 L42 28" stroke="#ff8078" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M20 22 Q28 26 36 22 Q30 30 22 30 Q14 28 20 22 Z" fill="#ff453a" transform="rotate(20 28 26)"/>
+  <line x1="28" y1="26" x2="24" y2="16" stroke="#8a8060" stroke-width="2" transform="rotate(20 28 26)"/>
+  <circle cx="27" cy="34" r="5" fill="none" stroke="#d8d0c0" stroke-width="3" transform="rotate(-8 27 34)"/>
+  <path d="M28 39 L24 54" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M24 54 L17 58" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M24 54 L32 58" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M26 42 L18 32" stroke="#d8d0c0" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <line x1="4" y1="58" x2="58" y2="58" stroke="#3a1518" stroke-width="2"/>
+</svg>`;
+
 // Map each weather code to a visual category so the chip's whole personality shifts with conditions
 function weatherCategory(code) {
-  if ([95,96,99].includes(code)) return { cls:'wx-storm', icon:'⛈️' };
-  if ([71,73,75].includes(code)) return { cls:'wx-snow', icon:'❄️' };
-  if ([51,53,55,61,63,65,80,81,82].includes(code)) return { cls:'wx-rain', icon:'🌧️' };
-  if ([2,3,45,48].includes(code)) return { cls:'wx-cloudy', icon:'⛅' };
-  return { cls:'wx-clear', icon:'☀️' };
+  if ([95,96,99].includes(code)) return { cls:'wx-storm', figure: WX_FIGURE_STORM };
+  if ([71,73,75].includes(code)) return { cls:'wx-snow', figure: WX_FIGURE_SNOW };
+  if ([51,53,55,61,63,65,80,81,82].includes(code)) return { cls:'wx-rain', figure: WX_FIGURE_RAIN };
+  if ([2,3,45,48].includes(code)) return { cls:'wx-cloudy', figure: WX_FIGURE_CLOUDY };
+  return { cls:'wx-clear', figure: WX_FIGURE_CLEAR };
 }
 
 async function loadWeather() {
@@ -1161,7 +1231,7 @@ async function loadWeather() {
 
     const chip = document.getElementById('weather-chip');
     chip.className = 'weather-chip ' + cat.cls;
-    document.getElementById('weather-chip-icon').textContent = cat.icon;
+    document.getElementById('weather-chip-icon').innerHTML = cat.figure;
     document.getElementById('weather-chip-temp').textContent = `${temp}°`;
     document.getElementById('weather-chip-desc').textContent = alerts.length ? `⚠ ${alerts[0].properties.event}` : desc;
 
