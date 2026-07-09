@@ -47,6 +47,8 @@
     animation: brandGlow 3s ease-in-out infinite;
   }
   @keyframes brandGlow { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+  .brand-star { display: inline-block; font-size: 11px; color: #c9d2de; animation: starTwinkle 3.5s ease-in-out infinite; text-shadow: 0 0 8px rgba(201,210,222,0.6); }
+  @keyframes starTwinkle { 0%,100% { opacity: 0.4; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.1); } }
   .topbar-date { font-size: 14px; color: #777; margin-top: 4px; }
   .stats-row { display: flex; gap: 32px; align-items: center; }
   .stat { text-align: center; }
@@ -58,9 +60,9 @@
 
   /* Day toggle */
   .day-toggle { display: flex; background: #0f0f0f; border-radius: 12px; padding: 4px; gap: 3px; margin-bottom: 16px; width: fit-content; }
-  .day-btn { padding: 10px 24px; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: none; color: #444; font-family: 'Inter', sans-serif; transition: all 0.15s; letter-spacing: 0.03em; }
-  .day-btn.active { background: #fff; color: #000; }
-  .day-btn.tomorrow.active { background: #1a1a1a; color: #fff; border: 1px solid #333; }
+  .day-btn { padding: 10px 24px; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: none; color: #444; font-family: 'Inter', sans-serif; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); letter-spacing: 0.03em; }
+  .day-btn.active { background: linear-gradient(135deg, #dfe6ee, #c9d2de 40%, #8b98ab); color: #0a1428; box-shadow: 0 2px 12px rgba(201,210,222,0.25); }
+  .day-btn.tomorrow.active { background: linear-gradient(135deg, #1a2744, #0e1626); color: #dfe6ee; border: 1px solid #2a3a5c; }
   .tomorrow-banner { display: none; background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 12px; padding: 12px 18px; margin-bottom: 16px; font-size: 14px; color: #666; }
   .tomorrow-banner.visible { display: block; }
   .tomorrow-banner strong { color: #fff; }
@@ -80,13 +82,14 @@
     flex-shrink: 0; width: 278px; scroll-snap-align: start; position: relative; overflow: hidden;
     background: #0a0a0a; border: 1px solid #1e1e1e; border-radius: 15px;
     padding: 18px; cursor: pointer; text-decoration: none; display: block;
-    transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.1s ease-out;
+    will-change: transform;
   }
   .news-card::after {
     content: '🐾'; position: absolute; bottom: -6px; right: -6px; font-size: 42px;
     opacity: 0.05; transform: rotate(-12deg); pointer-events: none;
   }
-  .news-card:hover { border-color: #3a3a3a; transform: rotate(0.5deg) translateY(-3px) scale(1.015); box-shadow: 0 10px 26px rgba(0,208,132,0.08); }
+  .news-card:hover { border-color: #3a3a3a; box-shadow: 0 10px 26px rgba(0,208,132,0.08); }
   .news-source { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #00d084; margin-bottom: 9px; }
   .news-headline { font-size: 15px; font-weight: 700; color: #fff; line-height: 1.4; margin-bottom: 10px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .news-time { font-size: 10px; color: #666; }
@@ -107,7 +110,17 @@
   .now-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #00d084; margin-right: 8px; box-shadow: 0 0 8px #00d084; vertical-align: middle; }
 
   .layout { display: grid; grid-template-columns: 1fr 280px; gap: 20px; }
-  .main-card { background: rgba(10,10,10,0.72); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid #1a1a1a; border-radius: 20px; padding: 2rem; box-shadow: 0 0 60px rgba(0,208,132,0.04), inset 0 1px 0 rgba(255,255,255,0.02); transition: box-shadow 0.4s ease; }
+
+  /* Rotating gradient shimmer border — the signature "premium" frame around the active card */
+  .main-card-wrap { position: relative; border-radius: 22px; padding: 2px; }
+  .main-card-wrap::before {
+    content: ''; position: absolute; inset: 0; border-radius: 22px; z-index: 0;
+    background: conic-gradient(from 0deg, #00d084, #8a5cff, #c9d2de, #00d084);
+    animation: shimmerSpin 8s linear infinite;
+    opacity: 0.55;
+  }
+  @keyframes shimmerSpin { to { transform: rotate(360deg); } }
+  .main-card { position: relative; z-index: 1; background: rgba(8,8,10,0.88); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.06); border-radius: 20px; padding: 2rem; box-shadow: inset 0 1px 0 rgba(255,255,255,0.05); transition: box-shadow 0.4s ease; }
   .main-card.tomorrow-mode { border-color: #1e1e1e; }
   .cand-name { font-size: 52px; font-weight: 700; color: #fff; line-height: 1; letter-spacing: -0.02em; margin-bottom: 8px; }
   .cand-title { font-size: 17px; color: #555; margin-bottom: 16px; }
@@ -118,9 +131,14 @@
   .tag-gray { background: #1a1a1a; color: #666; border: 1px solid #222; }
 
   .contact-row { display: flex; gap: 10px; margin-bottom: 2rem; flex-wrap: wrap; }
-  .contact-btn { display: flex; align-items: center; gap: 8px; padding: 14px 20px; border-radius: 12px; font-size: 14px; font-weight: 500; color: #fff; background: #141414; border: 1px solid #252525; cursor: pointer; text-decoration: none; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); font-family: 'Inter', sans-serif; }
-  .contact-btn:hover { transform: translateY(-2px) scale(1.02); }
-  .contact-btn:hover { background: #1e1e1e; border-color: #333; }
+  .contact-btn { position: relative; overflow: hidden; display: flex; align-items: center; gap: 8px; padding: 14px 20px; border-radius: 12px; font-size: 14px; font-weight: 500; color: #fff; background: #141414; border: 1px solid #252525; cursor: pointer; text-decoration: none; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); font-family: 'Inter', sans-serif; }
+  .contact-btn::before {
+    content: ''; position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
+    background: linear-gradient(115deg, transparent, rgba(255,255,255,0.12), transparent);
+    transform: skewX(-20deg); transition: left 0.6s ease;
+  }
+  .contact-btn:hover::before { left: 130%; }
+  .contact-btn:hover { transform: translateY(-2px) scale(1.02); background: #1e1e1e; border-color: #333; }
   .contact-btn.primary { background: #fff; color: #000; border-color: #fff; }
   .contact-btn.primary:hover { background: #e8e8e8; }
 
@@ -153,12 +171,26 @@
   .call-date { font-size: 12px; color: #444; }
 
   .right-col { display: flex; flex-direction: column; gap: 14px; }
-  .ai-card { background: rgba(10,10,10,0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid #1a1a1a; border-radius: 20px; padding: 1.5rem; box-shadow: 0 0 40px rgba(138,92,255,0.05); }
+  .ai-card {
+    position: relative; background: rgba(12,10,16,0.8); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(138,92,255,0.25); border-radius: 20px; padding: 1.5rem;
+    box-shadow: 0 0 50px rgba(138,92,255,0.10), inset 0 1px 0 rgba(255,255,255,0.04);
+    animation: aiGlow 4s ease-in-out infinite;
+  }
+  @keyframes aiGlow {
+    0%,100% { box-shadow: 0 0 50px rgba(138,92,255,0.10), inset 0 1px 0 rgba(255,255,255,0.04); }
+    50% { box-shadow: 0 0 70px rgba(138,92,255,0.18), inset 0 1px 0 rgba(255,255,255,0.04); }
+  }
   .pipe-card { background: rgba(10,10,10,0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid #1a1a1a; border-radius: 20px; padding: 1.5rem; }
-  .panel-title { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #666; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .panel-title { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #666; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
   .panel-title::after { content:''; flex:1; height:1px; background:#1a1a1a; }
+  #prep-title {
+    background: linear-gradient(90deg, #8a5cff, #00d084);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    font-size: 13px; font-weight: 700;
+  }
 
-  .tip { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #111; }
+  .tip { margin-bottom: 20px; padding-bottom: 20px; padding-left: 14px; border-left: 2px solid rgba(138,92,255,0.4); border-bottom: 1px solid #111; }
   .tip:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
   .tip-head { font-size: 16px; font-weight: 600; color: #fff; margin-bottom: 6px; }
   .tip-body { font-size: 14px; color: #888; line-height: 1.65; }
@@ -244,7 +276,7 @@
 
 <div class="topbar">
   <div>
-    <div class="brand">Recruitment</div>
+    <div class="brand">Recruitment <span class="brand-star">★</span></div>
     <div class="topbar-date" id="today-date">Loading…</div>
   </div>
   <div class="stats-row">
@@ -281,6 +313,7 @@
 
 <div class="layout">
   <div>
+    <div class="main-card-wrap">
     <div class="main-card" id="main-card">
       <div class="cand-name" id="cand-name">Loading…</div>
       <div class="cand-title" id="cand-title"></div>
@@ -298,6 +331,7 @@
       </div>
       <div id="tab-emails" class="tab-content"><div id="emails-list"></div></div>
       <div id="tab-calls" class="tab-content"><div id="calls-list"></div></div>
+    </div>
     </div>
   </div>
   <div class="right-col">
@@ -1029,9 +1063,33 @@ async function loadNews() {
         <div class="news-time">${relativeTime(item.pubDate)}</div>
       </a>`;
     }).join('');
+    attachTiltEffect();
   } catch(e) {
     document.getElementById('news-carousel').innerHTML = '<div class="news-empty">Could not load industry news right now.</div>';
   }
+}
+
+// Subtle 3D tilt on news cards only — decorative flourish, kept off primary reading surfaces
+// so it never interferes with focused reading. Skipped entirely on touch devices and for
+// anyone with reduced-motion preferences set.
+function attachTiltEffect() {
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const isFinePointer = window.matchMedia('(pointer: fine)').matches;
+  if (prefersReducedMotion || !isFinePointer) return;
+
+  document.querySelectorAll('.news-card').forEach(card => {
+    card.addEventListener('mousemove', e => {
+      const rect = card.getBoundingClientRect();
+      const x = e.clientX - rect.left - rect.width / 2;
+      const y = e.clientY - rect.top - rect.height / 2;
+      const rotateX = (-y / rect.height) * 6; // max ~6 degrees, kept subtle
+      const rotateY = (x / rect.width) * 6;
+      card.style.transform = `perspective(600px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateY(-3px)`;
+    });
+    card.addEventListener('mouseleave', () => {
+      card.style.transform = '';
+    });
+  });
 }
 
 async function loadAll() {
