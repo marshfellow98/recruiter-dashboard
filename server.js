@@ -200,8 +200,28 @@ async function handleAPI(pathname, query) {
 
   if (pathname === '/api/emails') {
     const token = await getMSToken();
+    const email = query.email || '';
     const name = query.name || '';
-    const res = await fetchJSON({
+
+    if (email) {
+      // Deterministic exact-match filter by email address — reliable, unlike $search
+      // which Microsoft documents as "eventual consistency" and can vary between identical requests.
+      const filter = `from/emailAddress/address eq '${email.replace(/'/g,"''")}' or toRecipients/any(r:r/emailAddress/address eq '${email.replace(/'/g,"''")}')`;
+      const res = await fetchJSON({
+        hostname: 'graph.microsoft.com',
+        path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$filter=${encodeURIComponent(filter)}&$select=subject,from,receivedDateTime,bodyPreview,webLink&$orderby=receivedDateTime desc&$top=5`,
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'ConsistencyLevel': 'eventual'
+        }
+      });
+      if (res.status === 200) return res.body;
+      // fall through to name search below if the filter request itself errors
+    }
+
+    // Fallback: name-based search (used only if no email on file for this candidate)
+    const res2 = await fetchJSON({
       hostname: 'graph.microsoft.com',
       path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$search="${encodeURIComponent(name)}"&$select=subject,from,receivedDateTime,bodyPreview,webLink&$top=5`,
       method: 'GET',
@@ -210,7 +230,7 @@ async function handleAPI(pathname, query) {
         'ConsistencyLevel': 'eventual'
       }
     });
-    return res.body;
+    return res2.body;
   }
 
   if (pathname === '/api/candidates') {
