@@ -33,25 +33,25 @@
   .schedule-strip { display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 4px; }
 
   /* ── Industry Pulse — news carousel ── */
-  .news-section { margin-bottom: 20px; }
-  .news-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-  .news-header .pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: #00d084; box-shadow: 0 0 6px #00d084; animation: newsPulse 2s infinite; }
+  .news-section { margin-bottom: 24px; }
+  .news-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .news-header .pulse-dot { width: 9px; height: 9px; border-radius: 50%; background: #00d084; box-shadow: 0 0 8px #00d084; animation: newsPulse 2s infinite; }
   @keyframes newsPulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
-  .news-title { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #666; }
-  .news-carousel { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; }
-  .news-carousel::-webkit-scrollbar { height: 4px; }
-  .news-carousel::-webkit-scrollbar-thumb { background: #222; border-radius: 2px; }
+  .news-title { font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #888; }
+  .news-carousel { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 10px; scroll-snap-type: x proximity; }
+  .news-carousel::-webkit-scrollbar { height: 6px; }
+  .news-carousel::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
   .news-card {
-    flex-shrink: 0; width: 260px; scroll-snap-align: start;
-    background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 14px;
-    padding: 16px; cursor: pointer; text-decoration: none; display: block;
+    flex-shrink: 0; width: 340px; scroll-snap-align: start;
+    background: #0a0a0a; border: 1px solid #1e1e1e; border-radius: 18px;
+    padding: 22px; cursor: pointer; text-decoration: none; display: block;
     transition: border-color 0.2s, transform 0.2s;
   }
-  .news-card:hover { border-color: #333; transform: translateY(-2px); }
-  .news-source { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #00d084; margin-bottom: 8px; }
-  .news-headline { font-size: 14px; font-weight: 600; color: #eee; line-height: 1.4; margin-bottom: 10px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .news-time { font-size: 11px; color: #444; }
-  .news-empty { font-size: 13px; color: #333; font-style: italic; padding: 12px 4px; }
+  .news-card:hover { border-color: #3a3a3a; transform: translateY(-2px); }
+  .news-source { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #00d084; margin-bottom: 12px; }
+  .news-headline { font-size: 19px; font-weight: 700; color: #fff; line-height: 1.45; margin-bottom: 14px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .news-time { font-size: 13px; color: #666; }
+  .news-empty { font-size: 15px; color: #444; font-style: italic; padding: 16px 4px; }
   .sched-item { flex-shrink: 0; padding: 14px 20px; border-radius: 12px; cursor: pointer; border: 1.5px solid #1a1a1a; background: #0a0a0a; min-width: 150px; transition: all 0.2s; }
   .sched-item:hover { border-color: #333; }
   .sched-item.active { background: #fff; border-color: #fff; }
