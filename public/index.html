@@ -308,7 +308,9 @@ const state = {
   tomorrowMeetings: [],
   candidates: {},
   emails: {},
+  emailsStatus: {},
   calls: {},
+  callsStatus: {},
   pipeline: [],
   selectedIdx: 0,
   currentDay: 'today'
@@ -667,17 +669,26 @@ async function loadEmails(name) {
       date: m.receivedDateTime, preview: m.bodyPreview||'',
       webLink: m.webLink||null
     }));
-  } catch(e) { state.emails[name] = []; }
+    state.emailsStatus[name] = 'ok';
+  } catch(e) {
+    state.emails[name] = [];
+    state.emailsStatus[name] = 'error';
+  }
 }
 
 let _allCallRecords = null;
+let _allCallsFailed = false;
 
 async function fetchAllCallsOnce() {
   if (_allCallRecords) return _allCallRecords;
   try {
     const data = await apiFetch('/api/calls');
     _allCallRecords = data.records || [];
-  } catch(e) { _allCallRecords = []; }
+    _allCallsFailed = false;
+  } catch(e) {
+    _allCallRecords = [];
+    _allCallsFailed = true;
+  }
   return _allCallRecords;
 }
 
@@ -696,6 +707,7 @@ async function loadCalls(name) {
         || toName.includes(first) || fromName.includes(first);
     })
     .map(r=>({ direction:r.direction, duration:r.duration, startTime:r.startTime, result:r.result }));
+  state.callsStatus[name] = _allCallsFailed ? 'error' : 'ok';
 }
 
 // ── Demo fallbacks ────────────────────────────
@@ -837,6 +849,7 @@ function renderCard() {
   document.getElementById('notes-text').textContent = c.notes || 'No tasks or activity logged yet. Log post-call notes as a Task in RecruiterFlow to see them here.';
 
   const emails = state.emails[name]||[];
+  const emailStatus = state.emailsStatus[name];
   document.getElementById('emails-list').innerHTML = emails.length
     ? emails.map(e=>`<div class="email-item" ${e.webLink?`onclick="window.open('${e.webLink}','_blank')" style="cursor:pointer"`:''}> 
         <div class="email-from"><span>${e.from}</span><span>${e.date?new Date(e.date).toLocaleDateString():''}</span></div>
@@ -844,9 +857,12 @@ function renderCard() {
         <div class="email-preview">${(e.preview||'').slice(0,140)}…</div>
         ${e.webLink?'<div style="font-size:11px;color:#555;margin-top:6px;">↗ Open in Outlook</div>':''}
       </div>`).join('')
-    : '<div class="empty-state">No recent emails found</div>';
+    : emailStatus === 'error'
+      ? '<div class="empty-state">⚠ Couldn\'t check email just now — tap Refresh to try again</div>'
+      : '<div class="empty-state">No recent emails found</div>';
 
   const calls = state.calls[name]||[];
+  const callStatus = state.callsStatus[name];
   document.getElementById('calls-list').innerHTML = calls.length
     ? calls.map(r=>{
         const dir=(r.direction||'').toLowerCase();
@@ -859,7 +875,9 @@ function renderCard() {
           <span class="call-date">${r.startTime?new Date(r.startTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):''}</span>
         </div>`;
       }).join('')
-    : '<div class="empty-state">No calls logged in the last 7 days</div>';
+    : callStatus === 'error'
+      ? '<div class="empty-state">⚠ Couldn\'t check calls just now — tap Refresh to try again</div>'
+      : '<div class="empty-state">No calls logged in the last 7 days</div>';
 
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
