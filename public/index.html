@@ -4,11 +4,28 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Recruitment Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { background: #000; min-height: 100vh; }
-  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; padding: 1.5rem; position: relative; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; padding: 1.5rem; position: relative; overflow-x: hidden; }
+
+  /* Aurora gradient mesh — slow-moving, contained to the edges so it never fights foreground contrast */
+  body::after {
+    content: ''; position: fixed; inset: -10%; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(0,208,132,0.10) 0%, transparent 32%),
+      radial-gradient(circle at 85% 15%, rgba(138,92,255,0.08) 0%, transparent 30%),
+      radial-gradient(circle at 75% 85%, rgba(0,208,132,0.07) 0%, transparent 34%),
+      radial-gradient(circle at 20% 80%, rgba(255,143,80,0.05) 0%, transparent 30%);
+    filter: blur(60px);
+    animation: auroraDrift 26s ease-in-out infinite;
+  }
+  @keyframes auroraDrift {
+    0%, 100% { transform: translate(0,0) rotate(0deg); }
+    33% { transform: translate(2%, -3%) rotate(3deg); }
+    66% { transform: translate(-3%, 2%) rotate(-2deg); }
+  }
 
   /* Subtle grain texture — adds tactile depth without touching contrast or readability */
   body::before {
@@ -18,8 +35,12 @@
   }
   .shell, .topbar, .day-toggle, .tomorrow-banner, .news-section, .schedule-strip, .layout, .modal-wrap, .alert-overlay { position: relative; z-index: 1; }
 
+  /* Entrance animation for the whole dashboard on load */
+  .shell-fade-in { animation: shellFadeIn 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
+  @keyframes shellFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
   .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; padding-bottom: 1.25rem; border-bottom: 1px solid #1a1a1a; }
-  .brand { font-size: 14px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; position: relative; display: inline-block; padding-bottom: 8px; }
+  .brand { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 14px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; position: relative; display: inline-block; padding-bottom: 8px; }
   .brand::after {
     content: ''; position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
     background: linear-gradient(90deg, #00d084, transparent 70%);
@@ -86,7 +107,7 @@
   .now-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #00d084; margin-right: 8px; box-shadow: 0 0 8px #00d084; vertical-align: middle; }
 
   .layout { display: grid; grid-template-columns: 1fr 280px; gap: 20px; }
-  .main-card { background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 20px; padding: 2rem; box-shadow: 0 0 60px rgba(0,208,132,0.04), inset 0 1px 0 rgba(255,255,255,0.02); transition: box-shadow 0.4s ease; }
+  .main-card { background: rgba(10,10,10,0.72); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid #1a1a1a; border-radius: 20px; padding: 2rem; box-shadow: 0 0 60px rgba(0,208,132,0.04), inset 0 1px 0 rgba(255,255,255,0.02); transition: box-shadow 0.4s ease; }
   .main-card.tomorrow-mode { border-color: #1e1e1e; }
   .cand-name { font-size: 52px; font-weight: 700; color: #fff; line-height: 1; letter-spacing: -0.02em; margin-bottom: 8px; }
   .cand-title { font-size: 17px; color: #555; margin-bottom: 16px; }
@@ -132,7 +153,8 @@
   .call-date { font-size: 12px; color: #444; }
 
   .right-col { display: flex; flex-direction: column; gap: 14px; }
-  .ai-card, .pipe-card { background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 20px; padding: 1.5rem; }
+  .ai-card { background: rgba(10,10,10,0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid #1a1a1a; border-radius: 20px; padding: 1.5rem; box-shadow: 0 0 40px rgba(138,92,255,0.05); }
+  .pipe-card { background: rgba(10,10,10,0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid #1a1a1a; border-radius: 20px; padding: 1.5rem; }
   .panel-title { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #666; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
   .panel-title::after { content:''; flex:1; height:1px; background:#1a1a1a; }
 
@@ -207,7 +229,7 @@
   @keyframes schedPulseRed { 0%,100%{box-shadow:0 0 0 0 rgba(255,69,58,0.5);} 50%{box-shadow:0 0 0 8px rgba(255,69,58,0);} }
 </style>
 </head>
-<body>
+<body class="shell-fade-in">
 
 <!-- Meeting alert overlay with dog mascot -->
 <div class="alert-overlay" id="alert-overlay">
@@ -227,7 +249,6 @@
   </div>
   <div class="stats-row">
     <div class="stat"><div class="stat-val" id="stat-today">—</div><div class="stat-label">Today</div></div>
-    <div class="stat"><div class="stat-val" id="stat-pipeline">—</div><div class="stat-label">Pipeline</div></div>
     <div class="stat"><div class="stat-val" id="stat-open">—</div><div class="stat-label">Open</div></div>
     <div class="stat"><div class="stat-val" id="stat-placed">—</div><div class="stat-label">Placed</div></div>
     <div class="sync-dot loading" id="sync-dot"></div>
@@ -650,7 +671,6 @@ async function loadCandidates() {
         stages[s]=(stages[s]||0)+1;
       });
       state.pipeline = Object.entries(stages).map(([s,n])=>({stage:s,count:n}));
-      document.getElementById('stat-pipeline').textContent = list.length;
       const placed = state.pipeline.find(p=>p.stage.toLowerCase().includes('place'));
       if (placed) document.getElementById('stat-placed').textContent = placed.count;
       return;
