@@ -112,20 +112,20 @@
   .layout { display: grid; grid-template-columns: 1fr 280px; gap: 20px; }
 
   /* Lava-lamp ambient blobs — soft, organic, strictly clipped so they never escape the card frame */
-  .main-card-wrap { position: relative; border-radius: 22px; padding: 2px; overflow: hidden; }
+  .main-card-wrap { position: relative; border-radius: 26px; padding: 26px; overflow: hidden; }
   .lava-blob {
-    position: absolute; z-index: 0; border-radius: 50%; filter: blur(38px); pointer-events: none;
+    position: absolute; z-index: 0; border-radius: 50%; filter: blur(44px); pointer-events: none;
   }
   .lava-blob.b1 {
-    width: 220px; height: 220px; background: rgba(0,208,132,0.45); left: -60px; top: -40px;
+    width: 260px; height: 260px; background: rgba(0,208,132,0.55); left: -70px; top: -60px;
     animation: lavaDrift1 18s ease-in-out infinite;
   }
   .lava-blob.b2 {
-    width: 180px; height: 180px; background: rgba(138,92,255,0.4); right: -50px; bottom: -30px;
+    width: 220px; height: 220px; background: rgba(138,92,255,0.5); right: -60px; bottom: -50px;
     animation: lavaDrift2 22s ease-in-out infinite;
   }
   .lava-blob.b3 {
-    width: 160px; height: 160px; background: rgba(201,210,222,0.22); right: 20%; top: -50px;
+    width: 200px; height: 200px; background: rgba(201,210,222,0.32); right: 15%; top: -70px;
     animation: lavaDrift3 26s ease-in-out infinite;
   }
   @keyframes lavaDrift1 {
