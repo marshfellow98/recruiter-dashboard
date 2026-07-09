@@ -604,7 +604,12 @@ async function loadCandidates() {
 
 async function loadEmails(name) {
   try {
-    const data = await apiFetch(`/api/emails?name=${encodeURIComponent(name)}`);
+    const candidate = findCandidate(name);
+    const email = candidate?.email || '';
+    const url = email
+      ? `/api/emails?name=${encodeURIComponent(name)}&email=${encodeURIComponent(email)}`
+      : `/api/emails?name=${encodeURIComponent(name)}`;
+    const data = await apiFetch(url);
     state.emails[name] = (data.value||[]).map(m=>({
       subject: m.subject||'(no subject)',
       from: m.from?.emailAddress?.name||m.from?.emailAddress?.address||'Unknown',
