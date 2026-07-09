@@ -247,7 +247,64 @@ async function handleAPI(pathname, query) {
     return res.body;
   }
 
+  if (pathname === '/api/news') {
+    const feeds = [
+      { hostname: 'www.insurancejournal.com', path: '/feed', source: 'Insurance Journal' },
+      { hostname: 'www.claimsjournal.com', path: '/feed', source: 'Claims Journal' }
+    ];
+    const allItems = [];
+    for (const feed of feeds) {
+      try {
+        const xml = await fetchText(feed.hostname, feed.path);
+        const items = parseRssItems(xml, feed.source);
+        allItems.push(...items);
+      } catch(e) {
+        console.error(`News feed error [${feed.source}]:`, e.message);
+      }
+    }
+    // Keep only items published in the last 48 hours, newest first
+    const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+    const fresh = allItems
+      .filter(item => item.pubDate && item.pubDate.getTime() > cutoff)
+      .sort((a, b) => b.pubDate - a.pubDate)
+      .slice(0, 15);
+    return { items: fresh };
+  }
+
   return null;
+}
+
+// ── Plain HTTPS GET returning raw text (for RSS feeds) ───
+function fetchText(hostname, path) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname, path, method: 'GET', headers: { 'User-Agent': 'RecruiterDashboard/1.0' } }, res => {
+      let data = '';
+      res.on('data', d => data += d);
+      res.on('end', () => resolve(data));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+// ── Minimal RSS <item> parser — no external dependencies ───
+function parseRssItems(xml, sourceName) {
+  const items = [];
+  const itemBlocks = xml.split('<item>').slice(1);
+  for (const block of itemBlocks) {
+    const titleMatch = block.match(/<title>([\s\S]*?)<\/title>/);
+    const linkMatch = block.match(/<link>([\s\S]*?)<\/link>/);
+    const dateMatch = block.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+    if (!titleMatch || !linkMatch) continue;
+    const clean = s => s.replace(/<!\[CDATA\[/g, '').replace(/\]\]>/g, '').trim();
+    items.push({
+      title: clean(titleMatch[1]),
+      link: clean(linkMatch[1]),
+      pubDate: dateMatch ? new Date(dateMatch[1]) : null,
+      source: sourceName
+    });
+  }
+  return items;
 }
 
 async function handleAIProxy(reqBody) {
