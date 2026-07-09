@@ -51,6 +51,49 @@
   @keyframes starTwinkle { 0%,100% { opacity: 0.4; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.1); } }
   .topbar-date { font-size: 19px; font-weight: 600; color: #ccc; margin-top: 5px; letter-spacing: 0.01em; }
   .stats-row { display: flex; gap: 32px; align-items: center; }
+
+  /* Weather chip — top of header, visually shifts personality based on live conditions */
+  .weather-chip {
+    display: flex; align-items: center; gap: 12px; padding: 10px 18px;
+    border-radius: 14px; background: #0d0d0d; border: 1px solid #1e1e1e;
+    transition: all 0.6s ease;
+  }
+  .weather-chip-icon { font-size: 30px; line-height: 1; }
+  .weather-chip-temp { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 22px; font-weight: 700; color: #fff; line-height: 1; }
+  .weather-chip-desc { font-size: 11px; color: #666; margin-top: 2px; letter-spacing: 0.02em; }
+
+  /* Clear / sunny */
+  .weather-chip.wx-clear { background: linear-gradient(135deg, rgba(255,180,60,0.14), #0d0d0d 65%); border-color: rgba(255,180,60,0.35); }
+  .weather-chip.wx-clear .weather-chip-icon { animation: wxSunPulse 3s ease-in-out infinite; }
+  @keyframes wxSunPulse { 0%,100%{ filter: drop-shadow(0 0 4px rgba(255,200,80,0.5)); } 50%{ filter: drop-shadow(0 0 12px rgba(255,200,80,0.9)); } }
+
+  /* Cloudy */
+  .weather-chip.wx-cloudy { background: linear-gradient(135deg, rgba(150,165,190,0.12), #0d0d0d 65%); border-color: rgba(150,165,190,0.3); }
+  .weather-chip.wx-cloudy .weather-chip-icon { animation: wxDrift 5s ease-in-out infinite; }
+  @keyframes wxDrift { 0%,100%{ transform: translateX(0); } 50%{ transform: translateX(3px); } }
+
+  /* Rain */
+  .weather-chip.wx-rain { background: linear-gradient(135deg, rgba(60,130,255,0.16), #0d0d0d 65%); border-color: rgba(60,130,255,0.35); }
+  .weather-chip.wx-rain .weather-chip-icon { animation: wxBounce 1.4s ease-in-out infinite; }
+  @keyframes wxBounce { 0%,100%{ transform: translateY(0); } 50%{ transform: translateY(3px); } }
+
+  /* Snow */
+  .weather-chip.wx-snow { background: linear-gradient(135deg, rgba(201,210,222,0.16), #0d0d0d 65%); border-color: rgba(201,210,222,0.35); }
+  .weather-chip.wx-snow .weather-chip-icon { animation: wxSpin 6s linear infinite; }
+  @keyframes wxSpin { to { transform: rotate(360deg); } }
+
+  /* Storm — matches the severity language used elsewhere in the dashboard */
+  .weather-chip.wx-storm { background: linear-gradient(135deg, rgba(255,69,58,0.18), #0d0d0d 65%); border-color: rgba(255,69,58,0.5); animation: wxStormPulse 1.8s ease-in-out infinite; }
+  .weather-chip.wx-storm .weather-chip-icon { animation: wxFlash 2.2s ease-in-out infinite; }
+  @keyframes wxStormPulse { 0%,100%{ border-color: rgba(255,69,58,0.5); } 50%{ border-color: rgba(255,69,58,0.85); } }
+  @keyframes wxFlash { 0%,88%,100%{ opacity: 1; } 90%{ opacity: 0.3; } 92%{ opacity: 1; } }
+
+  .weather-alert-strip {
+    margin-bottom: 16px; padding: 12px 18px; border-radius: 12px;
+    background: rgba(255,69,58,0.1); border: 1px solid rgba(255,69,58,0.4);
+    font-size: 13px; color: #ffb3ae; animation: weatherAlertPulse 2s ease-in-out infinite;
+  }
+  .weather-alert-strip strong { color: #ff8078; }
   .stat { text-align: center; }
   .stat-val { font-size: 42px; font-weight: 600; color: #fff; line-height: 1; }
   .stat-label { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #666; margin-top: 6px; }
@@ -319,6 +362,13 @@
     <div class="brand">MGMT Global <span class="brand-star">★</span></div>
     <div class="topbar-date" id="today-date">Loading…</div>
   </div>
+  <div class="weather-chip" id="weather-chip">
+    <div class="weather-chip-icon" id="weather-chip-icon">⛅</div>
+    <div>
+      <div class="weather-chip-temp" id="weather-chip-temp">—°</div>
+      <div class="weather-chip-desc" id="weather-chip-desc">Celina, TX</div>
+    </div>
+  </div>
   <div class="stats-row">
     <div class="stat"><div class="stat-val" id="stat-today">—</div><div class="stat-label">Today</div></div>
     <div class="stat"><div class="stat-val" id="stat-open">—</div><div class="stat-label">Open</div></div>
@@ -327,6 +377,8 @@
     <button onclick="loadAll()" style="background:#141414;border:1px solid #252525;color:#666;border-radius:8px;padding:6px 14px;font-size:11px;font-weight:600;letter-spacing:0.05em;cursor:pointer;font-family:'Inter',sans-serif;">↻ Refresh</button>
   </div>
 </div>
+
+<div class="weather-alert-strip" id="weather-alert-strip" style="display:none;"></div>
 
 <!-- Industry Pulse — P&C insurance news carousel, items expire after 48h -->
 <div class="news-section">
@@ -382,14 +434,6 @@
       <div class="panel-title" id="prep-title">AI Prep</div>
       <div id="prep-tips"><div class="tip-loading">Select a candidate to generate prep notes…</div></div>
       <button class="deeper-btn" id="deeper-btn" style="display:none" onclick="openModal()">↗ Full prep notes</button>
-    </div>
-    <div class="pipe-card">
-      <div class="panel-title">Pipeline</div>
-      <div id="pipeline-rows"><div class="tip-loading">Loading…</div></div>
-    </div>
-    <div class="pipe-card" id="weather-card">
-      <div class="panel-title">Celina, TX</div>
-      <div id="weather-content"><div class="tip-loading">Loading weather…</div></div>
     </div>
   </div>
 </div>
@@ -1070,17 +1114,6 @@ async function openModal() {
 }
 function closeModal() { document.getElementById('modal').classList.remove('open'); }
 
-function renderPipeline() {
-  if (!state.pipeline.length) return;
-  const max = Math.max(...state.pipeline.map(p=>p.count),1);
-  document.getElementById('pipeline-rows').innerHTML = state.pipeline.map(p=>`
-    <div class="pipe-row">
-      <span class="pipe-stage">${p.stage}</span>
-      <div class="pipe-track"><div class="pipe-fill" style="width:${Math.round(p.count/max*100)}%"></div></div>
-      <span class="pipe-count">${p.count}</span>
-    </div>`).join('');
-}
-
 // ── Industry Pulse — news carousel ────────────
 function relativeTime(pubDate) {
   const mins = Math.floor((Date.now() - new Date(pubDate)) / 60000);
@@ -1101,6 +1134,15 @@ const WEATHER_CODES = {
   95:'Thunderstorm', 96:'Thunderstorm w/ hail', 99:'Severe thunderstorm w/ hail'
 };
 
+// Map each weather code to a visual category so the chip's whole personality shifts with conditions
+function weatherCategory(code) {
+  if ([95,96,99].includes(code)) return { cls:'wx-storm', icon:'⛈️' };
+  if ([71,73,75].includes(code)) return { cls:'wx-snow', icon:'❄️' };
+  if ([51,53,55,61,63,65,80,81,82].includes(code)) return { cls:'wx-rain', icon:'🌧️' };
+  if ([2,3,45,48].includes(code)) return { cls:'wx-cloudy', icon:'⛅' };
+  return { cls:'wx-clear', icon:'☀️' };
+}
+
 async function loadWeather() {
   const lat = 33.3162, lon = -96.7889;
   try {
@@ -1112,27 +1154,28 @@ async function loadWeather() {
     const alertsData = await alertsRes.json();
 
     const temp = Math.round(current.current?.temperature_2m ?? 0);
-    const wind = Math.round(current.current?.wind_speed_10m ?? 0);
-    const desc = WEATHER_CODES[current.current?.weather_code] || 'Conditions unavailable';
+    const code = current.current?.weather_code;
+    const desc = WEATHER_CODES[code] || 'Celina, TX';
     const alerts = (alertsData.features || []).filter(f => f.properties?.severity !== 'Unknown');
+    const cat = weatherCategory(code);
 
-    let html = `
-      <div class="weather-main">
-        <div class="weather-temp">${temp}°</div>
-        <div><div class="weather-desc">${desc}</div><div class="weather-detail-row"><span>💨 ${wind} mph</span></div></div>
-      </div>`;
+    const chip = document.getElementById('weather-chip');
+    chip.className = 'weather-chip ' + cat.cls;
+    document.getElementById('weather-chip-icon').textContent = cat.icon;
+    document.getElementById('weather-chip-temp').textContent = `${temp}°`;
+    document.getElementById('weather-chip-desc').textContent = alerts.length ? `⚠ ${alerts[0].properties.event}` : desc;
 
+    const stripEl = document.getElementById('weather-alert-strip');
     if (alerts.length) {
-      alerts.slice(0, 2).forEach(a => {
-        html += `<div class="weather-alert">
-          <div class="weather-alert-title">⚠ ${a.properties.event}</div>
-          <div class="weather-alert-text">${(a.properties.headline||'').slice(0,140)}</div>
-        </div>`;
-      });
+      stripEl.style.display = 'block';
+      stripEl.innerHTML = alerts.slice(0,2).map(a =>
+        `<div><strong>⚠ ${a.properties.event}</strong> — ${(a.properties.headline||'').slice(0,160)}</div>`
+      ).join('<br>');
+    } else {
+      stripEl.style.display = 'none';
     }
-    document.getElementById('weather-content').innerHTML = html;
   } catch(e) {
-    document.getElementById('weather-content').innerHTML = '<div class="tip-loading">Weather unavailable right now.</div>';
+    document.getElementById('weather-chip-desc').textContent = 'Weather unavailable';
   }
 }
 
@@ -1197,7 +1240,6 @@ async function loadAll() {
   document.getElementById('stat-open').textContent = '11';
 
   renderSchedule();
-  renderPipeline();
   renderCard();
 
   const names = state.todayMeetings.map(m=>m.attendees?.[0]||m.title);
