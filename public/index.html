@@ -41,7 +41,7 @@
 
   .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; padding-bottom: 1.25rem; border-bottom: 1px solid #1a1a1a; }
   .topbar-left-group { display: flex; align-items: center; gap: 28px; }
-  .brand { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 14px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; position: relative; display: inline-block; padding-bottom: 8px; }
+  .brand { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 18px; font-weight: 700; letter-spacing: 0.08em; position: relative; display: inline-block; padding-bottom: 8px; }
   .brand::after {
     content: ''; position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
     background: linear-gradient(90deg, #00d084, transparent 70%);
@@ -50,7 +50,8 @@
   @keyframes brandGlow { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
   .brand-star { display: inline-block; font-size: 11px; color: #c9d2de; animation: starTwinkle 3.5s ease-in-out infinite; text-shadow: 0 0 8px rgba(201,210,222,0.6); }
   @keyframes starTwinkle { 0%,100% { opacity: 0.4; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.1); } }
-  .topbar-date { font-size: 19px; font-weight: 600; color: #ccc; margin-top: 5px; letter-spacing: 0.01em; }
+  .org-tagline { font-size: 12px; font-weight: 500; color: #777; letter-spacing: 0.05em; text-transform: uppercase; }
+  .topbar-date { font-size: 21px; font-weight: 700; color: #e8e8e8; margin-top: 6px; letter-spacing: 0.01em; }
   .stats-row { display: flex; gap: 32px; align-items: center; }
 
   /* Weather chip — top of header, visually shifts personality based on live conditions */
@@ -363,7 +364,7 @@
 <div class="topbar">
   <div class="topbar-left-group">
     <div>
-      <div class="brand">MGMT Global <span class="brand-star">★</span></div>
+      <div class="brand">MGMTGlobal <span class="brand-star">★</span> <span class="org-tagline">Insurance Risk Retirement</span></div>
       <div class="topbar-date" id="today-date">Loading…</div>
     </div>
     <div class="weather-chip" id="weather-chip">
@@ -925,8 +926,7 @@ function renderSchedule() {
 
   document.getElementById('today-date').textContent =
     (isTomorrow ? 'Tomorrow — ' : 'Today — ') +
-    new Date(isTomorrow ? Date.now()+86400000 : Date.now()).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}) +
-    ' · P&C Insurance';
+    new Date(isTomorrow ? Date.now()+86400000 : Date.now()).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
 
   if (!isTomorrow) document.getElementById('stat-today').textContent = meetings.length;
 
@@ -1307,7 +1307,7 @@ function attachTiltEffect() {
 
 async function loadAll() {
   setSync(false);
-  document.getElementById('today-date').textContent = fmtDate(new Date()) + ' · P&C Insurance';
+  document.getElementById('today-date').textContent = fmtDate(new Date());
   _allCallRecords = null; // force one fresh call-log fetch per page load
   await Promise.all([loadCalendar(), loadCandidates(), loadNews(), loadWeather()]);
 
