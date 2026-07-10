@@ -801,6 +801,7 @@ async function loadCandidates() {
         const stage = (rawStage && typeof rawStage === 'object') ? (rawStage.name || '') : (rawStage || '');
         state.candidates[name] = {
           name,
+          id: c.id || c.prospect_id || null,
           title: c.current_designation || c.current_title || '',
           company: c.current_organization || c.current_company || '',
           email: emailArr[0] || '',
@@ -1008,7 +1009,8 @@ function renderCard() {
   if (c.email)    btns += `<a class="contact-btn" href="mailto:${c.email}">✉ ${c.email}</a>`;
   if (c.phone)    btns += `<a class="contact-btn" href="tel:${c.phone.replace(/\D/g,'')}">✆ ${c.phone}</a>`;
   if (m.joinUrl)  btns += `<a class="contact-btn" href="${m.joinUrl}" target="_blank">⬛ Join Zoom</a>`;
-  btns += `<a class="contact-btn" href="https://app.recruiterflow.com" target="_blank">↗ RecruiterFlow</a>`;
+  const rfUrl = c.id ? `https://app.recruiterflow.com/prospect/${c.id}` : 'https://app.recruiterflow.com';
+  btns += `<a class="contact-btn" href="${rfUrl}" target="_blank">↗ RecruiterFlow</a>`;
   document.getElementById('contact-row').innerHTML = btns;
 
   document.getElementById('info-row').innerHTML = `
