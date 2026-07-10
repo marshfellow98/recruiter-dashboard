@@ -494,13 +494,30 @@ function findCandidate(name) {
   const parts = name.trim().split(' ');
   const first = (parts[0]||'').toLowerCase();
   const last = (parts[1]||'').toLowerCase();
-  const match = Object.values(state.candidates).find(c => {
-    const cParts = (c.name||'').trim().split(' ');
-    const cFirst = (cParts[0]||'').toLowerCase();
-    const cLast = (cParts[1]||'').toLowerCase();
-    return cFirst === first && cLast.startsWith(last) && last.length > 0;
+
+  // Standard case: both first and last name available — match first name + last-name-prefix
+  // (handles RecruiterFlow records where last_name has extra text like "Soto M.A., Insurance Agent")
+  if (last.length > 0) {
+    const match = Object.values(state.candidates).find(c => {
+      const cParts = (c.name||'').trim().split(' ');
+      const cFirst = (cParts[0]||'').toLowerCase();
+      const cLast = (cParts[1]||'').toLowerCase();
+      return cFirst === first && cLast.startsWith(last);
+    });
+    if (match) return match;
+  }
+
+  // Fallback: calendar entry is just a first name (e.g. "Abdul" with no last name on the event).
+  // Only match if exactly ONE candidate has that first name — never guess between multiple
+  // people sharing a first name, since showing the wrong person's info is worse than showing none.
+  const firstNameMatches = Object.values(state.candidates).filter(c => {
+    const cFirst = (c.name||'').trim().split(' ')[0]?.toLowerCase();
+    return cFirst === first;
   });
-  return match || null;
+  console.log(`[findCandidate] "${name}" → ${firstNameMatches.length} candidate(s) share first name "${first}"`, firstNameMatches.map(c=>c.name));
+  if (firstNameMatches.length === 1) return firstNameMatches[0];
+
+  return null;
 }
 
 // ── Meeting alert system — fluffy white dog mascot + bark cues ──
@@ -805,6 +822,7 @@ async function loadCandidates() {
       state.pipeline = Object.entries(stages).map(([s,n])=>({stage:s,count:n}));
       const placed = state.pipeline.find(p=>p.stage.toLowerCase().includes('place'));
       if (placed) document.getElementById('stat-placed').textContent = placed.count;
+      console.log(`[loadCandidates] Loaded ${list.length} candidates from RecruiterFlow. First few names:`, Object.keys(state.candidates).slice(0,10));
       return;
     }
   } catch(e) { console.warn('RecruiterFlow:', e.message); }
@@ -968,7 +986,9 @@ function renderCard() {
   const now = new Date();
   const mt = parseGraphDate(m.start);
   const name = m.attendees?.[0] || m.title;
-  const c = findCandidate(name) || { name, title:'',company:'',email:'',phone:'',linkedin:'',stage:'',notes:'No notes on file.',salary:'',tags:[] };
+  const matchedCandidate = findCandidate(name);
+  const c = matchedCandidate || { name, title:'',company:'',email:'',phone:'',linkedin:'',stage:'',notes:'No notes on file.',salary:'',tags:[] };
+  console.log(`[renderCard] Calendar name: "${name}" → ${matchedCandidate ? 'MATCHED to "'+matchedCandidate.name+'"' : 'NO MATCH FOUND — showing blank defaults'}`);
   const isTomorrow = state.currentDay === 'tomorrow';
   const done = !isTomorrow && mt < now && (now-mt) > 30*60000;
   const isNow = !isTomorrow && !done && Math.abs(now-mt) < 90*60000;
