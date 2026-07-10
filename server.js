@@ -214,13 +214,24 @@ async function handleAPI(pathname, query) {
   }
 
   if (pathname === '/api/candidates') {
-    const res = await fetchJSON({
-      hostname: 'recruiterflow.com',
-      path: '/api/external/candidate/list?current_page=1&items_per_page=100',
-      method: 'GET',
-      headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
-    });
-    return res.body;
+    let allCandidates = [];
+    let page = 1;
+    const maxPages = 20; // safety cap — 20 pages × 100 = up to 2000 candidates
+    while (page <= maxPages) {
+      const res = await fetchJSON({
+        hostname: 'recruiterflow.com',
+        path: `/api/external/candidate/list?current_page=${page}&items_per_page=100`,
+        method: 'GET',
+        headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
+      });
+      const pageData = Array.isArray(res.body) ? res.body : (res.body?.data || []);
+      if (!pageData.length) break; // no more pages
+      allCandidates = allCandidates.concat(pageData);
+      if (pageData.length < 100) break; // last page was partial, we're done
+      page++;
+    }
+    console.log(`Fetched ${allCandidates.length} total candidates across ${page} page(s)`);
+    return allCandidates;
   }
 
   if (pathname === '/api/calls') {
