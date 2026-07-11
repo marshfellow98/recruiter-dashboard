@@ -1009,7 +1009,7 @@ function renderCard() {
   if (c.email)    btns += `<a class="contact-btn" href="mailto:${c.email}">✉ ${c.email}</a>`;
   if (c.phone)    btns += `<a class="contact-btn" href="tel:${c.phone.replace(/\D/g,'')}">✆ ${c.phone}</a>`;
   if (m.joinUrl)  btns += `<a class="contact-btn" href="${m.joinUrl}" target="_blank">⬛ Join Zoom</a>`;
-  const rfUrl = c.id ? `https://app.recruiterflow.com/prospect/${c.id}` : 'https://app.recruiterflow.com';
+  const rfUrl = c.id ? `https://recruiterflow.com/candidates/${c.id}` : 'https://recruiterflow.com';
   btns += `<a class="contact-btn" href="${rfUrl}" target="_blank">↗ RecruiterFlow</a>`;
   document.getElementById('contact-row').innerHTML = btns;
 
