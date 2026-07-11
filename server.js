@@ -24,6 +24,7 @@ const CONFIG = {
 
 const tokens = { ms: null, zoom: null, rc: null, msExpiry: null };
 const callsCache = { data: null, expiry: 0 };
+const candidatesCache = { data: null, expiry: 0 };
 
 function fetchJSON(options, body) {
   return new Promise((resolve, reject) => {
@@ -220,9 +221,16 @@ async function handleAPI(pathname, query) {
   }
 
   if (pathname === '/api/candidates') {
+    // Shane has ~15,000 candidates — pulling all of them via ~150 sequential paginated
+    // requests is too slow to do on every single page load. Cache the full result for
+    // 20 minutes so repeat dashboard opens/refreshes reuse it instantly; only the first
+    // load in each 20-minute window pays the full fetch cost.
+    if (candidatesCache.data && Date.now() < candidatesCache.expiry) {
+      return candidatesCache.data;
+    }
     let allCandidates = [];
     let page = 1;
-    const maxPages = 20; // safety cap — 20 pages × 100 = up to 2000 candidates
+    const maxPages = 200; // safety cap — 200 pages × 100 = up to 20,000 candidates (headroom above his ~15,000)
     while (page <= maxPages) {
       const res = await fetchJSON({
         hostname: 'recruiterflow.com',
@@ -237,6 +245,8 @@ async function handleAPI(pathname, query) {
       page++;
     }
     console.log(`Fetched ${allCandidates.length} total candidates across ${page} page(s)`);
+    candidatesCache.data = allCandidates;
+    candidatesCache.expiry = Date.now() + 20 * 60000; // 20 minutes
     return allCandidates;
   }
 
