@@ -422,7 +422,7 @@
       <div class="cand-tags" id="cand-tags"></div>
       <div class="contact-row" id="contact-row"></div>
       <div class="info-row" id="info-row"></div>
-      <div class="tabs">
+      <div class="tabs" id="card-tabs">
         <button class="tab active" onclick="switchTab(this,'tab-notes')">Activity</button>
         <button class="tab" onclick="switchTab(this,'tab-emails')">Emails</button>
         <button class="tab" onclick="switchTab(this,'tab-calls')">Calls</button>
@@ -433,6 +433,7 @@
       </div>
       <div id="tab-emails" class="tab-content"><div id="emails-list"></div></div>
       <div id="tab-calls" class="tab-content"><div id="calls-list"></div></div>
+      <div id="simple-card-content" style="display:none;"></div>
     </div>
     </div>
   </div>
@@ -518,6 +519,28 @@ function findCandidate(name) {
   if (firstNameMatches.length === 1) return firstNameMatches[0];
 
   return null;
+}
+
+// Shane's internal team — meetings with these people are NOT candidate calls, even if
+// there happens to be a same-named candidate in RecruiterFlow. Checked before candidate
+// matching so a teammate never gets mistaken for someone being recruited.
+const TEAM_MEMBERS = ['abdul', 'swarnim', 'fadi'];
+
+// Personal calendar blocks — time on the calendar that isn't a meeting with anyone at all.
+const PERSONAL_BLOCK_KEYWORDS = ['coffee', 'news', 'lunch', 'break', 'focus', 'admin'];
+
+// Classifies a calendar event as 'candidate', 'team', or 'personal' so the rest of the
+// dashboard can treat each one appropriately instead of forcing candidate-style AI prep
+// onto a teammate sync or a lunch break.
+function classifyMeeting(m) {
+  const name = m.attendees?.[0] || m.title;
+  const first = name.trim().split(' ')[0]?.toLowerCase() || '';
+  const titleLower = (m.title || '').toLowerCase();
+
+  if (TEAM_MEMBERS.includes(first)) return 'team';
+  if (PERSONAL_BLOCK_KEYWORDS.some(kw => titleLower.includes(kw))) return 'personal';
+  if (findCandidate(name)) return 'candidate';
+  return 'personal'; // safe default — never force candidate treatment onto an unmatched name
 }
 
 // ── Meeting alert system — fluffy white dog mascot + bark cues ──
@@ -962,10 +985,12 @@ function renderSchedule() {
     const isNow = !isTomorrow && !done && Math.abs(now-mt) < 90*60000;
     const nowDot = isNow ? '<span class="now-dot"></span>' : '';
     const tClass = isTomorrow ? ' tomorrow-item' : '';
+    const category = classifyMeeting(m);
+    const roleText = category === 'team' ? 'Team' : category === 'personal' ? 'Personal' : (findCandidate(name)||{}).title||'';
     return `<div class="sched-item${i===state.selectedIdx?' active':''}${done?' done':''}${tClass}" onclick="selectCandidate(${i})">
       <div class="sched-time">${nowDot}${fmtTime(m.start)}</div>
       <div class="sched-name">${name}</div>
-      <div class="sched-role">${(findCandidate(name)||{}).title||''}</div>
+      <div class="sched-role">${roleText}</div>
     </div>`;
   }).join('');
 }
@@ -987,12 +1012,52 @@ function renderCard() {
   const now = new Date();
   const mt = parseGraphDate(m.start);
   const name = m.attendees?.[0] || m.title;
-  const matchedCandidate = findCandidate(name);
-  const c = matchedCandidate || { name, title:'',company:'',email:'',phone:'',linkedin:'',stage:'',notes:'No notes on file.',salary:'',tags:[] };
-  console.log(`[renderCard] Calendar name: "${name}" → ${matchedCandidate ? 'MATCHED to "'+matchedCandidate.name+'"' : 'NO MATCH FOUND — showing blank defaults'}`);
+  const category = classifyMeeting(m);
   const isTomorrow = state.currentDay === 'tomorrow';
   const done = !isTomorrow && mt < now && (now-mt) > 30*60000;
   const isNow = !isTomorrow && !done && Math.abs(now-mt) < 90*60000;
+
+  // ── Team meeting or personal block — simplified, honest card, no candidate-style AI prep ──
+  if (category !== 'candidate') {
+    document.getElementById('main-card').className = 'main-card' + (isTomorrow ? ' tomorrow-mode' : '');
+    document.getElementById('cand-name').textContent = name;
+    document.getElementById('cand-title').textContent = category === 'team' ? 'Internal team meeting' : 'Personal time';
+    const timeTagCls = isTomorrow ? 'tag-tomorrow' : 'tag-now';
+    const timePrefix = isTomorrow ? '◷ ' : isNow ? '▶ ' : done ? '✓ ' : '';
+    document.getElementById('cand-tags').innerHTML =
+      `<span class="tag ${timeTagCls}">${timePrefix}${fmtTime(m.start)}</span>` +
+      `<span class="tag tag-gray">${category === 'team' ? 'TEAM' : 'PERSONAL'}</span>`;
+    document.getElementById('contact-row').innerHTML = m.joinUrl
+      ? `<a class="contact-btn" href="${m.joinUrl}" target="_blank">⬛ Join Zoom</a>` : '';
+    document.getElementById('info-row').innerHTML = `
+      <div class="info-cell"><div class="info-label">Meeting</div><div class="info-val">${fmtTime(m.start)}</div></div>
+      <div class="info-cell"><div class="info-label">Type</div><div class="info-val">${category === 'team' ? 'Team sync' : 'Personal block'}</div></div>`;
+
+    // Hide the candidate-style tabs entirely — replace with one honest, simple section
+    document.getElementById('card-tabs').style.display = 'none';
+    document.getElementById('tab-notes').classList.remove('active');
+    document.getElementById('tab-emails').classList.remove('active');
+    document.getElementById('tab-calls').classList.remove('active');
+    const simple = document.getElementById('simple-card-content');
+    simple.style.display = 'block';
+    if (category === 'team') {
+      simple.innerHTML = `
+        <div class="notes-text">${m.preview ? m.preview.slice(0,300) : 'No agenda details on this invite.'}</div>
+        <div style="font-size:11px;color:#444;margin-top:14px;letter-spacing:0.05em;">TEAM CHAT</div>
+        <div class="empty-state">Slack not connected yet — recent messages with ${name} will show here once it's set up.</div>`;
+    } else {
+      simple.innerHTML = `<div class="empty-state">Personal time on the calendar — nothing to prep here.</div>`;
+    }
+    return;
+  }
+
+  // Reset tabs/simple-content visibility for real candidate cards (in case we just came from a team/personal card)
+  document.getElementById('card-tabs').style.display = 'flex';
+  document.getElementById('simple-card-content').style.display = 'none';
+
+  const matchedCandidate = findCandidate(name);
+  const c = matchedCandidate || { name, title:'',company:'',email:'',phone:'',linkedin:'',stage:'',notes:'No notes on file.',salary:'',tags:[] };
+  console.log(`[renderCard] Calendar name: "${name}" → ${matchedCandidate ? 'MATCHED to "'+matchedCandidate.name+'"' : 'NO MATCH FOUND — showing blank defaults'}`);
 
   document.getElementById('main-card').className = 'main-card' + (isTomorrow ? ' tomorrow-mode' : '');
   document.getElementById('cand-name').textContent = name;
@@ -1064,8 +1129,21 @@ async function generatePrep() {
   const m = meetings[state.selectedIdx];
   if (!m) return;
   const name = m.attendees?.[0] || m.title;
-  const c = findCandidate(name)||{};
+  const category = classifyMeeting(m);
   const isTomorrow = state.currentDay === 'tomorrow';
+
+  // Team meetings and personal blocks don't get candidate-style AI prep — that's the
+  // whole point of separating them out. Show something honest instead, no API call wasted.
+  if (category !== 'candidate') {
+    document.getElementById('prep-title').textContent = category === 'team' ? `Team · ${name.split(' ')[0]}` : 'Personal Time';
+    document.getElementById('prep-tips').innerHTML = category === 'team'
+      ? `<div class="tip"><div class="tip-head">Internal sync</div><div class="tip-body">This is a team meeting, not a candidate call — no prep needed here.</div></div>`
+      : `<div class="tip"><div class="tip-head">No prep needed</div><div class="tip-body">Personal time on the calendar.</div></div>`;
+    document.getElementById('deeper-btn').style.display = 'none';
+    return;
+  }
+
+  const c = findCandidate(name)||{};
 
   document.getElementById('prep-title').textContent = `${isTomorrow?'Tomorrow Prep':'AI Prep'} · ${name.split(' ')[0]}`;
   document.getElementById('prep-tips').innerHTML = '<div class="tip-loading">Generating prep notes…</div>';
