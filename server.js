@@ -165,15 +165,20 @@ async function handleAPI(pathname, query) {
   // Debug MS token
   if (pathname === '/api/calendar') {
     const token = await getMSToken();
-    // Wide window covering full day in Central Time regardless of server UTC offset
+    // Wide window covering full day in Central Time regardless of server UTC offset.
+    // Central midnight-to-midnight spans into the NEXT UTC calendar day, so the end
+    // boundary must roll over rather than stopping at the same UTC date's 23:59:59
+    // (which was cutting off anything after ~7pm Central — the actual bug).
     const now = new Date();
     const centralOffset = 5 * 60 * 60 * 1000;
     const centralNow = new Date(now.getTime() - centralOffset);
     const today = centralNow.toISOString().split('T')[0];
+    const centralNowPlus1 = new Date(centralNow.getTime() + 24*60*60*1000);
+    const nextDay = centralNowPlus1.toISOString().split('T')[0];
     console.log('Fetching calendar for date:', today);
     const res = await fetchJSON({
       hostname: 'graph.microsoft.com',
-      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${today}T00:00:00Z&endDateTime=${today}T23:59:59Z&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=20`,
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${today}T00:00:00Z&endDateTime=${nextDay}T04:59:59Z&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=20`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -189,9 +194,10 @@ async function handleAPI(pathname, query) {
     const centralNow = new Date(now.getTime() - centralOffset);
     centralNow.setDate(centralNow.getDate() + 1);
     const tDate = centralNow.toISOString().split('T')[0];
+    const tDatePlus1 = new Date(centralNow.getTime() + 24*60*60*1000).toISOString().split('T')[0];
     const res = await fetchJSON({
       hostname: 'graph.microsoft.com',
-      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${tDate}T05:00:00Z&endDateTime=${tDate}T23:59:59Z&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=20`,
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${tDate}T05:00:00Z&endDateTime=${tDatePlus1}T04:59:59Z&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=20`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
