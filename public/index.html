@@ -385,8 +385,6 @@
     </div>
   </div>
   <div class="stats-row">
-    <div class="stat"><div class="stat-val" id="stat-today">—</div><div class="stat-label">Today</div></div>
-    <div class="stat"><div class="stat-val" id="stat-open">—</div><div class="stat-label">Open</div></div>
     <div class="next-up" id="next-up">
       <div class="next-up-label">Next Up</div>
       <div class="next-up-name" id="next-up-name">—</div>
@@ -1025,8 +1023,6 @@ function renderSchedule() {
     (isTomorrow ? 'Tomorrow — ' : 'Today — ') +
     new Date(isTomorrow ? Date.now()+86400000 : Date.now()).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
 
-  if (!isTomorrow) document.getElementById('stat-today').textContent = meetings.length;
-
   const strip = document.getElementById('schedule-strip');
   if (!meetings.length) {
     strip.innerHTML = '<div style="color:#333;font-style:italic;font-size:14px;padding:14px 0">No meetings scheduled</div>';
@@ -1491,8 +1487,6 @@ async function loadAll() {
   const now = new Date();
   const next = state.todayMeetings.findIndex(m=>parseGraphDate(m.start)>=now);
   state.selectedIdx = next===-1 ? 0 : next;
-  document.getElementById('stat-today').textContent = state.todayMeetings.length;
-  document.getElementById('stat-open').textContent = '11';
 
   renderSchedule();
   renderCard();
