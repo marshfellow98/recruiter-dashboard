@@ -130,6 +130,39 @@ async function handleAPI(pathname, query) {
     return { status: res.status, body: res.body };
   }
 
+  // Debug: does a Contacts endpoint exist, following the same naming pattern as
+  // /api/external/candidate/list? Read-only, completely safe to test.
+  if (pathname === '/api/debug/contacts') {
+    const res = await fetchJSON({
+      hostname: 'recruiterflow.com',
+      path: '/api/external/contact/list?current_page=1&items_per_page=5',
+      method: 'GET',
+      headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
+    });
+    return { status: res.status, body: res.body };
+  }
+
+  // Debug: test creating a note directly via API. WRITES REAL DATA to Anthony Soto's
+  // record (id 31211) if it succeeds — the note text is deliberately labeled as a test
+  // so it's obvious and easy to delete afterward if this works.
+  if (pathname === '/api/debug/create-note') {
+    const payload = JSON.stringify({
+      candidate_id: 31211,
+      notes: '[TEST NOTE — dashboard API experiment, safe to delete] ' + new Date().toISOString()
+    });
+    const res = await fetchJSON({
+      hostname: 'recruiterflow.com',
+      path: '/api/external/notes/create',
+      method: 'POST',
+      headers: {
+        'rf-api-key': CONFIG.recruiterflow.apiKey,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    }, payload);
+    return { status: res.status, body: res.body };
+  }
+
   // Debug RC token
   if (pathname === '/api/debug/rctoken') {
     const clientId = process.env.RC_CLIENT_ID_NEW || process.env.RC_CLIENT_ID;
