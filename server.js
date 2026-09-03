@@ -25,6 +25,7 @@ const CONFIG = {
 const tokens = { ms: null, zoom: null, rc: null, msExpiry: null };
 const callsCache = { data: null, expiry: 0 };
 const candidatesCache = { data: null, expiry: 0 };
+const contactsCache = { data: null, expiry: 0 };
 
 function fetchJSON(options, body) {
   return new Promise((resolve, reject) => {
@@ -281,6 +282,35 @@ async function handleAPI(pathname, query) {
     candidatesCache.data = allCandidates;
     candidatesCache.expiry = Date.now() + 20 * 60000; // 20 minutes
     return allCandidates;
+  }
+
+  if (pathname === '/api/contacts') {
+    // Confirmed working endpoint (status 200) — same pagination shape as candidates.
+    // Contacts are people like hiring managers or referral sources who aren't candidates
+    // themselves, so meetings with them can show real title/company/email instead of guessing.
+    if (contactsCache.data && Date.now() < contactsCache.expiry) {
+      return contactsCache.data;
+    }
+    let allContacts = [];
+    let page = 1;
+    const maxPages = 100; // up to 10,000 contacts — generous headroom, adjust if needed
+    while (page <= maxPages) {
+      const res = await fetchJSON({
+        hostname: 'recruiterflow.com',
+        path: `/api/external/contact/list?current_page=${page}&items_per_page=100`,
+        method: 'GET',
+        headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
+      });
+      const pageData = Array.isArray(res.body) ? res.body : (res.body?.data || []);
+      if (!pageData.length) break;
+      allContacts = allContacts.concat(pageData);
+      if (pageData.length < 100) break;
+      page++;
+    }
+    console.log(`Fetched ${allContacts.length} total contacts across ${page} page(s)`);
+    contactsCache.data = allContacts;
+    contactsCache.expiry = Date.now() + 20 * 60000; // 20 minutes
+    return allContacts;
   }
 
   if (pathname === '/api/calls') {
