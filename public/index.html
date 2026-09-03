@@ -471,6 +471,7 @@ const state = {
   todayMeetings: [],
   tomorrowMeetings: [],
   candidates: {},
+  contacts: {},
   emails: {},
   emailsStatus: {},
   calls: {},
@@ -531,6 +532,33 @@ function findCandidate(name) {
   return null;
 }
 
+// Same fuzzy matching approach as findCandidate, but against real RecruiterFlow Contact
+// records instead of Candidates — for people like hiring managers who aren't candidates.
+function findContact(name) {
+  if (state.contacts[name]) return state.contacts[name];
+  const parts = name.trim().split(' ');
+  const first = (parts[0]||'').toLowerCase();
+  const last = (parts[1]||'').toLowerCase();
+
+  if (last.length > 0) {
+    const match = Object.values(state.contacts).find(c => {
+      const cParts = (c.name||'').trim().split(' ');
+      const cFirst = (cParts[0]||'').toLowerCase();
+      const cLast = (cParts[1]||'').toLowerCase();
+      return cFirst === first && cLast.startsWith(last);
+    });
+    if (match) return match;
+  }
+
+  const firstNameMatches = Object.values(state.contacts).filter(c => {
+    const cFirst = (c.name||'').trim().split(' ')[0]?.toLowerCase();
+    return cFirst === first;
+  });
+  if (firstNameMatches.length === 1) return firstNameMatches[0];
+
+  return null;
+}
+
 // Shane's internal team — meetings with these people are NOT candidate calls, even if
 // there happens to be a same-named candidate in RecruiterFlow. Checked before candidate
 // matching so a teammate never gets mistaken for someone being recruited.
@@ -554,6 +582,10 @@ function classifyMeeting(m) {
   if (findCandidate(name)) return 'candidate';
   if (TEAM_MEMBERS.includes(first)) return 'team';
   if (PERSONAL_BLOCK_KEYWORDS.some(kw => titleLower.includes(kw))) return 'personal';
+
+  // A real RecruiterFlow Contact record (hiring manager, referral source, etc.) — the
+  // strongest possible signal, checked before falling back to a name-pattern guess.
+  if (findContact(name)) return 'contact';
 
   // Looks like an actual person's name (two capitalized words, e.g. "James Beck") but isn't
   // in RecruiterFlow yet — still a real contact worth showing email history and light AI
@@ -912,6 +944,33 @@ async function loadCandidates() {
   useDemoCandidates();
 }
 
+async function loadContacts() {
+  try {
+    const data = await apiFetch('/api/contacts');
+    const list = Array.isArray(data) ? data : (data.data || data.contacts || []);
+    if (list.length) {
+      list.forEach(c => {
+        // Field names unconfirmed for Contacts specifically — fall back defensively across
+        // the naming conventions we've seen RecruiterFlow use elsewhere (candidate records).
+        const lastNameRaw = (c.last_name || '').split(',')[0].trim();
+        const name = `${c.first_name||''} ${lastNameRaw}`.trim();
+        if (!name) return;
+        const emailArr = Array.isArray(c.email) ? c.email : (c.email ? [c.email] : []);
+        const phoneArr = Array.isArray(c.phone_number) ? c.phone_number : (c.phone_number ? [c.phone_number] : []);
+        state.contacts[name] = {
+          name,
+          id: c.id || null,
+          title: c.current_designation || c.designation || c.title || '',
+          company: c.client_company_name || c.organization || c.current_organization || c.company || '',
+          email: emailArr[0] || c.email_id || '',
+          phone: phoneArr[0] || ''
+        };
+      });
+      console.log(`[loadContacts] Loaded ${list.length} contacts from RecruiterFlow. First few:`, Object.keys(state.contacts).slice(0,10));
+    }
+  } catch(e) { console.warn('RecruiterFlow contacts:', e.message); }
+}
+
 async function loadEmails(name) {
   try {
     const data = await apiFetch(`/api/emails?name=${encodeURIComponent(name)}`);
@@ -1109,8 +1168,9 @@ function renderCard() {
   document.getElementById('simple-card-content').style.display = 'none';
 
   const matchedCandidate = findCandidate(name);
-  const c = matchedCandidate || { name, title:'',company:'',email:'',phone:'',linkedin:'',stage:'',notes:'No notes on file.',salary:'',tags:[] };
-  console.log(`[renderCard] Calendar name: "${name}" → ${matchedCandidate ? 'MATCHED to "'+matchedCandidate.name+'"' : 'NO MATCH FOUND — showing blank defaults'}`);
+  const matchedContact = matchedCandidate ? null : findContact(name);
+  const c = matchedCandidate || matchedContact || { name, title:'',company:'',email:'',phone:'',linkedin:'',stage:'',notes:'No notes on file.',salary:'',tags:[] };
+  console.log(`[renderCard] Calendar name: "${name}" → ${matchedCandidate ? 'MATCHED candidate "'+matchedCandidate.name+'"' : matchedContact ? 'MATCHED contact "'+matchedContact.name+'"' : 'NO MATCH FOUND — showing blank defaults'}`);
 
   document.getElementById('main-card').className = 'main-card' + (isTomorrow ? ' tomorrow-mode' : '');
   document.getElementById('cand-name').textContent = name;
@@ -1128,9 +1188,10 @@ function renderCard() {
   if (c.email)    btns += `<a class="contact-btn" href="mailto:${c.email}">✉ ${c.email}</a>`;
   if (c.phone)    btns += `<a class="contact-btn" href="tel:${c.phone.replace(/\D/g,'')}">✆ ${c.phone}</a>`;
   if (m.joinUrl)  btns += `<a class="contact-btn" href="${m.joinUrl}" target="_blank">⬛ Join Zoom</a>`;
-  if (category === 'candidate') {
-    const rfUrl = c.id ? `https://recruiterflow.com/candidates/${c.id}` : 'https://recruiterflow.com';
-    btns += `<a class="contact-btn" href="${rfUrl}" target="_blank">↗ RecruiterFlow</a>`;
+  if (category === 'candidate' && c.id) {
+    btns += `<a class="contact-btn" href="https://recruiterflow.com/candidates/${c.id}" target="_blank">↗ RecruiterFlow</a>`;
+  } else if (category === 'contact' && matchedContact && matchedContact.id) {
+    btns += `<a class="contact-btn" href="https://recruiterflow.com/contacts/${matchedContact.id}" target="_blank">↗ RecruiterFlow</a>`;
   }
   document.getElementById('contact-row').innerHTML = btns;
 
@@ -1141,7 +1202,9 @@ function renderCard() {
     <div class="info-cell"><div class="info-label">Source</div><div class="info-val">${c.source||'—'}</div></div>`;
 
   document.getElementById('notes-text').textContent = category === 'contact'
-    ? 'Not in RecruiterFlow yet — showing available email and call history only.'
+    ? (matchedContact
+        ? 'RecruiterFlow Contact — not a candidate. No task notes for contacts; showing email and call history.'
+        : 'Not in RecruiterFlow at all — showing available email and call history only.')
     : (c.notes || 'No tasks or activity logged yet. Log post-call notes as a Task in RecruiterFlow to see them here.');
 
   const emails = state.emails[name]||[];
@@ -1482,7 +1545,7 @@ async function loadAll() {
   setSync(false);
   document.getElementById('today-date').textContent = fmtDate(new Date());
   _allCallRecords = null; // force one fresh call-log fetch per page load
-  await Promise.all([loadCalendar(), loadCandidates(), loadNews(), loadWeather()]);
+  await Promise.all([loadCalendar(), loadCandidates(), loadContacts(), loadNews(), loadWeather()]);
 
   const now = new Date();
   const next = state.todayMeetings.findIndex(m=>parseGraphDate(m.start)>=now);
