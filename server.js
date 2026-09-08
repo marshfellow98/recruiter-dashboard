@@ -213,7 +213,7 @@ async function handleAPI(pathname, query) {
   if (pathname === '/api/debug/update-notes') {
     const payload = JSON.stringify({
       id: 31211,
-      notes: '[TEST NOTE — dashboard API experiment, safe to delete] ' + new Date().toISOString()
+      notes: ['[TEST NOTE — dashboard API experiment, safe to delete] ' + new Date().toISOString()]
     });
     const res = await fetchJSON({
       hostname: 'recruiterflow.com',
