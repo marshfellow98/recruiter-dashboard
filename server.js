@@ -228,6 +228,27 @@ async function handleAPI(pathname, query) {
     return { status: res.status, body: res.body };
   }
 
+  // Debug: test a boolean field write — different data type than notes (array) or
+  // current_designation (string). If this works, it opens the door to a real
+  // "Do Not Contact" quick-toggle right on the candidate card.
+  if (pathname === '/api/debug/update-donotemail') {
+    const payload = JSON.stringify({
+      id: 31211,
+      do_not_email: true
+    });
+    const res = await fetchJSON({
+      hostname: 'recruiterflow.com',
+      path: '/api/external/candidate/update',
+      method: 'POST',
+      headers: {
+        'rf-api-key': CONFIG.recruiterflow.apiKey,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    }, payload);
+    return { status: res.status, body: res.body };
+  }
+
   // Debug RC token
   if (pathname === '/api/debug/rctoken') {
     const clientId = process.env.RC_CLIENT_ID_NEW || process.env.RC_CLIENT_ID;
