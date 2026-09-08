@@ -207,6 +207,27 @@ async function handleAPI(pathname, query) {
     return { status: res.status, body: res.body };
   }
 
+  // Debug: does candidate/update also let us write directly to the Notes field?
+  // If so, this replaces the failed notes/create attempts and lets voice quick-notes
+  // post straight to RecruiterFlow instead of requiring copy-paste.
+  if (pathname === '/api/debug/update-notes') {
+    const payload = JSON.stringify({
+      id: 31211,
+      notes: '[TEST NOTE — dashboard API experiment, safe to delete] ' + new Date().toISOString()
+    });
+    const res = await fetchJSON({
+      hostname: 'recruiterflow.com',
+      path: '/api/external/candidate/update',
+      method: 'POST',
+      headers: {
+        'rf-api-key': CONFIG.recruiterflow.apiKey,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    }, payload);
+    return { status: res.status, body: res.body };
+  }
+
   // Debug RC token
   if (pathname === '/api/debug/rctoken') {
     const clientId = process.env.RC_CLIENT_ID_NEW || process.env.RC_CLIENT_ID;
