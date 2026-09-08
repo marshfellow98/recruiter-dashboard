@@ -996,6 +996,7 @@ async function setOverride(name, currentLabel) {
     const data = await res.json();
     state.overrides = data.overrides || state.overrides;
   } catch(e) { console.warn('Could not save override:', e.message); }
+  renderSchedule();
   renderCard();
 }
 
@@ -1124,7 +1125,7 @@ function renderSchedule() {
     const nowDot = isNow ? '<span class="now-dot"></span>' : '';
     const tClass = isTomorrow ? ' tomorrow-item' : '';
     const category = classifyMeeting(m);
-    const roleText = category === 'team' ? 'Team' : category === 'personal' ? 'Personal' : category === 'contact' ? 'Contact' : (findCandidate(name)||{}).title||'';
+    const roleText = category === 'team' ? 'Team' : category === 'personal' ? 'Personal' : category === 'contact' ? (state.overrides[name] || 'Contact') : (findCandidate(name)||{}).title||'';
     return `<div class="sched-item${i===state.selectedIdx?' active':''}${done?' done':''}${tClass}" onclick="selectCandidate(${i})">
       <div class="sched-time">${nowDot}${fmtTime(m.start)}</div>
       <div class="sched-name">${name}</div>
