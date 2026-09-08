@@ -186,6 +186,27 @@ async function handleAPI(pathname, query) {
     return { status: res.status, body: res.body };
   }
 
+  // Debug: test the write-back endpoint with a safe, easily-reversible field first
+  // (current_designation), before attempting anything stage/job-related. Anthony Soto
+  // (id 31211) is no longer in an active process, so this is low-risk to test on.
+  if (pathname === '/api/debug/update-candidate') {
+    const payload = JSON.stringify({
+      candidate_id: 31211,
+      current_designation: 'Insurance Producer [API TEST]'
+    });
+    const res = await fetchJSON({
+      hostname: 'recruiterflow.com',
+      path: '/api/external/candidate/update',
+      method: 'POST',
+      headers: {
+        'rf-api-key': CONFIG.recruiterflow.apiKey,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    }, payload);
+    return { status: res.status, body: res.body };
+  }
+
   // Debug RC token
   if (pathname === '/api/debug/rctoken') {
     const clientId = process.env.RC_CLIENT_ID_NEW || process.env.RC_CLIENT_ID;
@@ -264,7 +285,27 @@ async function handleAPI(pathname, query) {
   if (pathname === '/api/emails') {
     const token = await getMSToken();
     const name = query.name || '';
-    const res = await fetchJSON({
+    const email = query.email || '';
+
+    if (email) {
+      // Deterministic exact-match filter — reliable, unlike $search which Microsoft
+      // documents as "eventually consistent" and can return different results moment to moment.
+      const filter = `from/emailAddress/address eq '${email.replace(/'/g,"''")}' or toRecipients/any(r:r/emailAddress/address eq '${email.replace(/'/g,"''")}')`;
+      const res = await fetchJSON({
+        hostname: 'graph.microsoft.com',
+        path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$filter=${encodeURIComponent(filter)}&$select=subject,from,receivedDateTime,bodyPreview,webLink&$orderby=receivedDateTime desc&$top=5`,
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'ConsistencyLevel': 'eventual'
+        }
+      });
+      if (res.status === 200) return res.body;
+      console.warn('Email filter-by-address failed, falling back to name search. Status:', res.status);
+    }
+
+    // Fallback: name-based search, used only when there's no email on file for this person
+    const res2 = await fetchJSON({
       hostname: 'graph.microsoft.com',
       path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$search="${encodeURIComponent(name)}"&$select=subject,from,receivedDateTime,bodyPreview,webLink&$top=5`,
       method: 'GET',
@@ -273,7 +314,7 @@ async function handleAPI(pathname, query) {
         'ConsistencyLevel': 'eventual'
       }
     });
-    return res.body;
+    return res2.body;
   }
 
   if (pathname === '/api/candidates') {
