@@ -472,6 +472,7 @@ const state = {
   tomorrowMeetings: [],
   candidates: {},
   contacts: {},
+  overrides: {},
   emails: {},
   emailsStatus: {},
   calls: {},
@@ -971,6 +972,33 @@ async function loadContacts() {
   } catch(e) { console.warn('RecruiterFlow contacts:', e.message); }
 }
 
+// ── Manual label overrides ──────────────────────────────────
+// Lets Shane correct a mislabeled person (e.g. someone the system defaulted to
+// "Contact" who's actually an insurance producer) directly from the card.
+// Saved on the server so both users see the same label. Real RecruiterFlow
+// data always wins over this — it's purely a fallback display label for
+// people classifyMeeting() can't otherwise identify.
+async function loadOverrides() {
+  try {
+    state.overrides = await apiFetch('/api/overrides');
+  } catch(e) { state.overrides = {}; }
+}
+
+async function setOverride(name, currentLabel) {
+  const label = prompt(`What should this person's label say instead of "Contact"?\n\n(Leave blank to clear the override.)`, currentLabel || '');
+  if (label === null) return; // cancelled
+  try {
+    const res = await fetch('/api/overrides', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, label: label.trim() })
+    });
+    const data = await res.json();
+    state.overrides = data.overrides || state.overrides;
+  } catch(e) { console.warn('Could not save override:', e.message); }
+  renderCard();
+}
+
 async function loadEmails(name) {
   try {
     const data = await apiFetch(`/api/emails?name=${encodeURIComponent(name)}`);
@@ -1174,11 +1202,15 @@ function renderCard() {
 
   document.getElementById('main-card').className = 'main-card' + (isTomorrow ? ' tomorrow-mode' : '');
   document.getElementById('cand-name').textContent = name;
-  document.getElementById('cand-title').textContent = [c.title,c.company].filter(Boolean).join(' · ');
+  const overrideLabel = state.overrides[name] || '';
+  const titleLine = [c.title, c.company].filter(Boolean).join(' · ') || (category === 'contact' ? overrideLabel : '');
+  document.getElementById('cand-title').textContent = titleLine;
 
   const timeTagCls = isTomorrow ? 'tag-tomorrow' : 'tag-now';
   const timePrefix = isTomorrow ? '◷ ' : isNow ? '▶ ' : done ? '✓ ' : '';
-  const categoryBadge = category === 'contact' ? '<span class="tag tag-gray">CONTACT</span>' : '';
+  const categoryBadge = category === 'contact'
+    ? `<span class="tag tag-gray" style="cursor:pointer" onclick="setOverride('${name.replace(/'/g,"\\'")}','${overrideLabel.replace(/'/g,"\\'")}')" title="Click to set a custom label">${overrideLabel ? overrideLabel.toUpperCase() : 'CONTACT'} ✎</span>`
+    : '';
   const tags = `<span class="tag ${timeTagCls}">${timePrefix}${fmtTime(m.start)}</span>` + categoryBadge +
     (c.tags||[]).map(t=>`<span class="tag tag-gray">${t}</span>`).join('');
   document.getElementById('cand-tags').innerHTML = tags;
@@ -1545,7 +1577,7 @@ async function loadAll() {
   setSync(false);
   document.getElementById('today-date').textContent = fmtDate(new Date());
   _allCallRecords = null; // force one fresh call-log fetch per page load
-  await Promise.all([loadCalendar(), loadCandidates(), loadContacts(), loadNews(), loadWeather()]);
+  await Promise.all([loadCalendar(), loadCandidates(), loadContacts(), loadOverrides(), loadNews(), loadWeather()]);
 
   const now = new Date();
   const next = state.todayMeetings.findIndex(m=>parseGraphDate(m.start)>=now);
