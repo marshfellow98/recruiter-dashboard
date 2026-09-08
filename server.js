@@ -27,6 +27,28 @@ const callsCache = { data: null, expiry: 0 };
 const candidatesCache = { data: null, expiry: 0 };
 const contactsCache = { data: null, expiry: 0 };
 
+// ── Manual label overrides ─────────────────────────────────
+// Lets Shane correct a mislabeled person (e.g. someone the system defaulted to
+// "Contact" who's actually an insurance producer) directly from the dashboard.
+// Saved to disk so it survives refreshes and both users see the same label.
+// This is deliberately just a DISPLAY label — classifyMeeting() always checks
+// real RecruiterFlow data first, so the moment a genuine Candidate or Contact
+// record appears for that name, the real data takes over automatically and
+// this override simply stops being consulted for that person.
+const OVERRIDES_FILE = path.join(__dirname, 'overrides.json');
+
+function loadOverrides() {
+  try {
+    return JSON.parse(fs.readFileSync(OVERRIDES_FILE, 'utf8'));
+  } catch(e) {
+    return {}; // file doesn't exist yet, or is invalid — start fresh
+  }
+}
+
+function saveOverrides(overrides) {
+  fs.writeFileSync(OVERRIDES_FILE, JSON.stringify(overrides, null, 2));
+}
+
 function fetchJSON(options, body) {
   return new Promise((resolve, reject) => {
     const req = https.request(options, res => {
@@ -507,6 +529,39 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/ai') {
     res.writeHead(405, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Method Not Allowed - use POST' }));
+    return;
+  }
+
+  if (pathname === '/api/overrides' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(loadOverrides()));
+    return;
+  }
+
+  if (pathname === '/api/overrides' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const name = (body.name || '').trim();
+      const label = (body.label || '').trim();
+      if (!name) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'name is required' }));
+        return;
+      }
+      const overrides = loadOverrides();
+      if (label) {
+        overrides[name] = label;
+      } else {
+        delete overrides[name]; // empty label clears the override
+      }
+      saveOverrides(overrides);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, overrides }));
+    } catch(e) {
+      console.error('Overrides save error:', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
     return;
   }
 
