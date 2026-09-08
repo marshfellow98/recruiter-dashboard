@@ -192,7 +192,7 @@ async function handleAPI(pathname, query) {
   if (pathname === '/api/debug/update-candidate') {
     const payload = JSON.stringify({
       id: 31211,
-      current_designation: 'Insurance Producer [API TEST]'
+      current_designation: 'Insurance Producer'
     });
     const res = await fetchJSON({
       hostname: 'recruiterflow.com',
