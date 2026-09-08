@@ -191,7 +191,7 @@ async function handleAPI(pathname, query) {
   // (id 31211) is no longer in an active process, so this is low-risk to test on.
   if (pathname === '/api/debug/update-candidate') {
     const payload = JSON.stringify({
-      candidate_id: 31211,
+      id: 31211,
       current_designation: 'Insurance Producer [API TEST]'
     });
     const res = await fetchJSON({
