@@ -749,6 +749,39 @@
   .notes-status { font-size: 13px; color: var(--t3); }
   .notes-status.ok { color: var(--accent); }
   .notes-status.warn { color: #ffb86b; }
+  /* ── Weather ───────────────────────────────────────────────────────────── */
+  .weather-chip {
+    display: flex; align-items: stretch; gap: 0;
+    padding: 0; overflow: hidden; width: 442px;
+    border-radius: 22px;
+  }
+  .wx-scene {
+    width: 116px; flex-shrink: 0; display: block;
+    border-right: 1px solid rgba(255,255,255,0.10);
+  }
+  .wx-body { flex: 1; min-width: 0; padding: 12px 16px 8px; }
+  .wx-top { display: flex; align-items: baseline; gap: 12px; }
+  .weather-chip-temp { font-size: 38px; line-height: 1; }
+  .wx-stack { display: flex; flex-direction: column; gap: 2px; }
+  .wx-feels { font-size: 12px; font-weight: 600; color: var(--t3); }
+  .wx-hilo { font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
+  .wx-hi { color: #ffc98a; }
+  .wx-lo { color: #9ec9ff; }
+  .wx-sep { color: var(--t4); margin: 0 4px; }
+  .weather-chip-desc { font-size: 14px; margin-top: 5px; }
+  .weather-chip-sub { font-size: 12.5px; margin-top: 4px; line-height: 1.5; }
+  .wx-arrow { display: inline-block; font-size: 13px; color: var(--t2);
+              transition: transform 0.6s var(--settle); }
+  .wx-spark { display: block; width: 100%; height: 52px; margin-top: 4px; }
+  /* A heat advisory earns a warmer frame — he lives in Texas and it matters. */
+  .weather-chip.wx-hot { border-color: transparent; box-shadow: var(--e1), 0 0 26px rgba(255,150,70,0.16); }
+
+  @media (max-width: 1280px) {
+    .weather-chip { width: 330px; }
+    .wx-scene { width: 92px; }
+    .weather-chip-temp { font-size: 32px; }
+    .wx-spark { height: 42px; }
+  }
 </style>
 </head>
 <body class="shell-fade-in">
@@ -771,11 +804,18 @@
       <div class="topbar-date" id="today-date">Loading…</div>
     </div>
     <div class="weather-chip" id="weather-chip">
-      <div class="weather-chip-icon" id="weather-chip-icon">⛅</div>
-      <div>
-        <div class="weather-chip-temp" id="weather-chip-temp">—°</div>
+      <canvas class="wx-scene" id="wx-scene" aria-hidden="true"></canvas>
+      <div class="wx-body">
+        <div class="wx-top">
+          <div class="weather-chip-temp" id="weather-chip-temp">—°</div>
+          <div class="wx-stack">
+            <div class="wx-feels" id="weather-chip-feels"></div>
+            <div class="wx-hilo" id="weather-chip-hilo"></div>
+          </div>
+        </div>
         <div class="weather-chip-desc" id="weather-chip-desc">Celina, TX</div>
         <div class="weather-chip-sub" id="weather-chip-sub"></div>
+        <canvas class="wx-spark" id="wx-spark" aria-hidden="true"></canvas>
       </div>
     </div>
   </div>
@@ -2009,41 +2049,349 @@ function weatherCategory(code) {
   return { cls:'wx-clear', figure: WX_FIGURE_CLEAR };
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   WEATHER
+   Replaces the single flat icon. Two canvases:
+
+   The scene is a live sky — the sun or moon sits at its real elevation for the
+   moment you're looking, derived from today's sunrise and sunset, so at 6am it
+   is genuinely low and at noon genuinely high. Cloud cover, rain, snow,
+   lightning and heat shimmer come from the actual condition code.
+
+   The sparkline is the next twelve hours of temperature with precipitation
+   probability behind it, because "is it going to rain before my 2pm" is the
+   question a forecast is actually for.
+
+   Everything an eye needs to read — temperature, condition, wind, the high and
+   low — stays as real text at full size. The scene is atmosphere behind it,
+   never the only carrier of a fact.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const WX = {
+  scene: null, sctx: null, spark: null, pctx: null,
+  data: null, raf: null, last: 0, flash: 0, nextFlash: 0
+};
+
+function wxReduced() { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+
+// 0 at sunrise, 1 at sunset; outside that range means night.
+function wxDayProgress(now, sunrise, sunset) {
+  if (!sunrise || !sunset) return 0.5;
+  const a = sunrise.getTime(), b = sunset.getTime(), t = now.getTime();
+  // A non-positive day length means the pair is unusable — a malformed
+  // response, or somewhere with no sunrise that day. Clamping the denominator
+  // to 1ms instead produced values in the millions, which happened to land
+  // outside [0,1] and so looked like night by luck rather than by intent.
+  if (!(b > a)) return -1;   // treat as night, deliberately
+  return (t - a) / (b - a);
+}
+
+function wxSkyColors(d) {
+  const p = d.progress;
+  const night = p < 0 || p > 1;
+  if (night) return ['#070b18', '#0d1226', '#141a33'];
+  if (p < 0.12) return ['#1e2a4a', '#4a3a5c', '#8a5a4a'];   // dawn
+  if (p > 0.88) return ['#2a2340', '#6b3a4a', '#b05a35'];   // dusk
+  if (d.cat === 'wx-storm')  return ['#1a1f2e', '#252b3d', '#2f3547'];
+  if (d.cat === 'wx-rain')   return ['#1e2836', '#2b3a4d', '#3a4a5e'];
+  if (d.cat === 'wx-snow')   return ['#2a3140', '#3c4557', '#505a6e'];
+  if (d.cat === 'wx-cloudy') return ['#243044', '#33415a', '#465571'];
+  return ['#0f3a6b', '#1d6ba8', '#4aa3d6'];                  // clear day
+}
+
+function wxResizeCanvas(cv) {
+  const box = cv.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = Math.max(1, Math.round(box.width * dpr));
+  cv.height = Math.max(1, Math.round(box.height * dpr));
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w: box.width, h: box.height };
+}
+
+function wxDrawScene(ts) {
+  if (!WX.scene || !WX.data) return;
+  const { ctx, w, h } = wxResizeCanvas(WX.scene);
+  const d = WX.data;
+  const reduced = wxReduced();
+  const t = reduced ? 0 : ts / 1000;
+
+  const [c0, c1, c2] = wxSkyColors(d);
+  const sky = ctx.createLinearGradient(0, 0, 0, h);
+  sky.addColorStop(0, c0); sky.addColorStop(0.55, c1); sky.addColorStop(1, c2);
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, w, h);
+
+  const night = d.progress < 0 || d.progress > 1;
+
+  // Stars, only at night, fading in near the edges of twilight.
+  if (night) {
+    for (let i = 0; i < 26; i++) {
+      const sx = ((i * 97) % 100) / 100 * w;
+      const sy = ((i * 53) % 70) / 100 * h;
+      const tw = reduced ? 0.6 : 0.35 + 0.45 * Math.abs(Math.sin(t * 0.7 + i));
+      ctx.fillStyle = `rgba(255,255,255,${tw.toFixed(2)})`;
+      ctx.fillRect(sx, sy, 1.4, 1.4);
+    }
+  }
+
+  // Sun or moon on its real arc. Behind rain, snow or a storm you would not
+  // see either, so it is skipped outright; under plain cloud it is dimmed to
+  // a glow rather than drawn as a disc peeking through the overcast.
+  const thick = d.cat === 'wx-rain' || d.cat === 'wx-snow' || d.cat === 'wx-storm';
+  const bodyAlpha = thick ? 0 : d.cat === 'wx-cloudy' ? 0.42 : 1;
+  const p = Math.max(0, Math.min(1, d.progress));
+  const bodyX = w * (0.16 + p * 0.68);
+  const bodyY = h * (0.78 - Math.sin(p * Math.PI) * 0.52);
+  const r = night ? 9 : 11;
+  const warm = d.cat === 'wx-clear';
+  const glowR = r * (warm ? 3.6 : 2.4);
+  if (bodyAlpha > 0) {
+    ctx.save();
+    ctx.globalAlpha = bodyAlpha;
+    const glow = ctx.createRadialGradient(bodyX, bodyY, 0, bodyX, bodyY, glowR);
+    glow.addColorStop(0, night ? 'rgba(210,225,255,0.5)' : 'rgba(255,225,150,0.75)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(bodyX, bodyY, glowR, 0, Math.PI * 2); ctx.fill();
+
+    ctx.beginPath(); ctx.arc(bodyX, bodyY, r, 0, Math.PI * 2);
+    ctx.fillStyle = night ? '#dfe6f5' : '#ffe08a';
+    ctx.fill();
+    if (night) {
+      // Crescent, cut by overdrawing the sky colour.
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.beginPath(); ctx.arc(bodyX + r * 0.45, bodyY - r * 0.3, r * 0.92, 0, Math.PI * 2); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.restore();
+  }
+
+  // Clouds — count and opacity follow the condition.
+  const clouds = d.cat === 'wx-clear' ? 1 : d.cat === 'wx-cloudy' ? 3 : 4;
+  const cloudAlpha = d.cat === 'wx-clear' ? 0.22 : d.cat === 'wx-cloudy' ? 0.5 : 0.62;
+  for (let i = 0; i < clouds; i++) {
+    const speed = 7 + i * 5;
+    const cx = ((t * speed / 10 + i * 43) % 130 - 15) / 100 * w;
+    const cy = h * (0.2 + (i % 3) * 0.17);
+    const cw = w * (0.3 + (i % 2) * 0.12);
+    const ch = h * 0.13;
+    ctx.fillStyle = `rgba(${night ? '150,160,185' : '235,240,250'},${(cloudAlpha * (0.6 + 0.4 * ((i % 2) ? 1 : 0.7))).toFixed(2)})`;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, cw * 0.5, ch, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx + cw * 0.22, cy - ch * 0.35, cw * 0.32, ch * 0.85, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Precipitation.
+  if (d.cat === 'wx-rain' || d.cat === 'wx-storm') {
+    ctx.strokeStyle = 'rgba(190,215,255,0.6)';
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < 34; i++) {
+      const x = ((i * 37) % 100) / 100 * w;
+      const y = ((i * 61 + t * 260) % 100) / 100 * h;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 2, y + 9); ctx.stroke();
+    }
+  }
+  if (d.cat === 'wx-snow') {
+    for (let i = 0; i < 26; i++) {
+      const x = (((i * 41) % 100) / 100 * w) + Math.sin(t * 0.8 + i) * 6;
+      const y = ((i * 57 + t * 42) % 100) / 100 * h;
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.beginPath(); ctx.arc(x, y, 1.7, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // Lightning: an occasional full-frame flash rather than a drawn bolt, which
+  // reads better at this size.
+  if (d.cat === 'wx-storm' && !reduced) {
+    if (ts > WX.nextFlash) { WX.flash = 1; WX.nextFlash = ts + 2600 + Math.random() * 3200; }
+    if (WX.flash > 0) {
+      ctx.fillStyle = `rgba(230,240,255,${(WX.flash * 0.55).toFixed(2)})`;
+      ctx.fillRect(0, 0, w, h);
+      WX.flash -= 0.09;
+    }
+  }
+
+  // Heat shimmer, for the advisories he actually gets.
+  if (d.hot && !reduced) {
+    ctx.strokeStyle = 'rgba(255,190,120,0.22)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 4; i++) {
+      const y = h * (0.66 + i * 0.075);
+      ctx.beginPath();
+      for (let x = 0; x <= w; x += 4) {
+        const yy = y + Math.sin((x / 13) + t * 1.8 + i) * 1.8;
+        x === 0 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy);
+      }
+      ctx.stroke();
+    }
+  }
+
+  // Ground line, to seat the scene.
+  const g = ctx.createLinearGradient(0, h * 0.82, 0, h);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.42)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, h * 0.82, w, h * 0.18);
+}
+
+function wxDrawSpark() {
+  if (!WX.spark || !WX.data || !WX.data.hours || WX.data.hours.length < 2) return;
+  const { ctx, w, h } = wxResizeCanvas(WX.spark);
+  const hrs = WX.data.hours;
+  ctx.clearRect(0, 0, w, h);
+
+  const temps = hrs.map(x => x.temp);
+  const lo = Math.min(...temps), hi = Math.max(...temps);
+  const span = Math.max(1, hi - lo);
+  const padT = 16, padB = 13;
+  const X = i => (i / (hrs.length - 1)) * (w - 10) + 5;
+  const Y = v => padT + (1 - (v - lo) / span) * (h - padT - padB);
+
+  // Precipitation probability as bars behind the line.
+  hrs.forEach((x, i) => {
+    if (!x.pop) return;
+    const bw = (w - 10) / hrs.length * 0.62;
+    const bh = (h - padT - padB) * (x.pop / 100);
+    ctx.fillStyle = `rgba(90,170,255,${(0.16 + 0.3 * (x.pop / 100)).toFixed(2)})`;
+    ctx.fillRect(X(i) - bw / 2, h - padB - bh, bw, bh);
+  });
+
+  // Temperature line with a soft fill under it.
+  ctx.beginPath();
+  hrs.forEach((x, i) => (i ? ctx.lineTo(X(i), Y(x.temp)) : ctx.moveTo(X(i), Y(x.temp))));
+  const area = ctx.createLinearGradient(0, padT, 0, h - padB);
+  area.addColorStop(0, 'rgba(255,190,90,0.30)');
+  area.addColorStop(1, 'rgba(255,190,90,0)');
+  ctx.save();
+  ctx.lineTo(X(hrs.length - 1), h - padB); ctx.lineTo(X(0), h - padB); ctx.closePath();
+  ctx.fillStyle = area; ctx.fill();
+  ctx.restore();
+
+  ctx.beginPath();
+  hrs.forEach((x, i) => (i ? ctx.lineTo(X(i), Y(x.temp)) : ctx.moveTo(X(i), Y(x.temp))));
+  ctx.strokeStyle = 'rgba(255,205,120,0.95)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Now marker.
+  ctx.beginPath(); ctx.arc(X(0), Y(hrs[0].temp), 3.4, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffd88a'; ctx.fill();
+
+  // End labels only — a tick per hour would be unreadable at this height.
+  ctx.font = '600 10px Inter, system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(200,210,224,0.95)';
+  ctx.textAlign = 'left';
+  ctx.fillText(`${Math.round(hrs[0].temp)}° now`, 5, 11);
+  ctx.textAlign = 'right';
+  ctx.fillText(hrs[hrs.length - 1].label, w - 5, 11);
+  ctx.textAlign = 'center';
+  const maxI = temps.indexOf(hi);
+  ctx.fillStyle = 'rgba(255,205,120,0.95)';
+  ctx.fillText(`${Math.round(hi)}°`, Math.min(w - 16, Math.max(16, X(maxI))), Y(hi) - 6);
+}
+
+function wxFrame(ts) {
+  WX.raf = requestAnimationFrame(wxFrame);
+  if (document.hidden || !WX.data) return;
+  if (ts - WX.last < 45) return;               // ~22fps is plenty for a sky
+  WX.last = ts;
+  wxDrawScene(ts);
+}
+
+// Compass arrow for wind direction: meteorological degrees are the direction
+// the wind comes FROM, so the arrow is rotated to point where it is going.
+function wxArrow(deg) {
+  return `<span class="wx-arrow" style="transform:rotate(${(deg + 180) % 360}deg)">↑</span>`;
+}
+
 async function loadWeather() {
   const lat = 33.3162, lon = -96.7889;
   try {
-    const [currentRes, alertsRes] = await Promise.all([
-      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph`),
+    const [fRes, aRes] = await Promise.all([
+      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+            `&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,relative_humidity_2m,is_day` +
+            `&hourly=temperature_2m,precipitation_probability` +
+            `&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset` +
+            `&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=2`),
       fetch(`https://api.weather.gov/alerts/active?point=${lat},${lon}`)
     ]);
-    const current = await currentRes.json();
-    const alertsData = await alertsRes.json();
+    const f = await fRes.json();
+    const alertsData = await aRes.json();
 
-    const temp = Math.round(current.current?.temperature_2m ?? 0);
-    const wind = Math.round(current.current?.wind_speed_10m ?? 0);
-    const code = current.current?.weather_code;
-    const desc = WEATHER_CODES[code] || 'Celina, TX';
-    const alerts = (alertsData.features || []).filter(f => f.properties?.severity !== 'Unknown');
+    const cur = f.current || {};
+    const temp = Math.round(cur.temperature_2m ?? 0);
+    const feels = Math.round(cur.apparent_temperature ?? cur.temperature_2m ?? 0);
+    const wind = Math.round(cur.wind_speed_10m ?? 0);
+    const windDir = cur.wind_direction_10m ?? 0;
+    const hum = Math.round(cur.relative_humidity_2m ?? 0);
+    const code = cur.weather_code;
     const cat = weatherCategory(code);
+    const desc = WEATHER_CODES[code] || 'Celina, TX';
+
+    const hiT = Math.round(f.daily?.temperature_2m_max?.[0] ?? temp);
+    const loT = Math.round(f.daily?.temperature_2m_min?.[0] ?? temp);
+    const sunrise = f.daily?.sunrise?.[0] ? new Date(f.daily.sunrise[0]) : null;
+    const sunset  = f.daily?.sunset?.[0]  ? new Date(f.daily.sunset[0])  : null;
+
+    // Next twelve hours, starting from the current hour.
+    const hours = [];
+    const times = f.hourly?.time || [];
+    const now = new Date();
+    let start = times.findIndex(t => new Date(t) >= now);
+    if (start < 0) start = 0;
+    for (let i = start; i < Math.min(start + 12, times.length); i++) {
+      const dt = new Date(times[i]);
+      hours.push({
+        temp: f.hourly.temperature_2m[i],
+        pop: f.hourly.precipitation_probability?.[i] ?? 0,
+        label: dt.toLocaleTimeString('en-US', { hour: 'numeric' })
+      });
+    }
+
+    const alerts = (alertsData.features || []).filter(x => x.properties?.severity !== 'Unknown');
+    const hot = temp >= 92 || alerts.some(a => /heat/i.test(a.properties?.event || ''));
+
+    WX.data = { cat: cat.cls, progress: wxDayProgress(now, sunrise, sunset), hot, hours };
 
     const chip = document.getElementById('weather-chip');
-    chip.className = 'weather-chip ' + cat.cls;
-    document.getElementById('weather-chip-icon').innerHTML = cat.figure;
+    chip.className = 'weather-chip ' + cat.cls + (hot ? ' wx-hot' : '');
     document.getElementById('weather-chip-temp').textContent = `${temp}°`;
-    document.getElementById('weather-chip-desc').textContent = alerts.length ? `⚠ ${alerts[0].properties.event}` : desc;
-    document.getElementById('weather-chip-sub').textContent = `Celina, TX · 💨 ${wind} mph`;
+    document.getElementById('weather-chip-desc').textContent =
+      alerts.length ? `⚠ ${alerts[0].properties.event}` : desc;
+    document.getElementById('weather-chip-feels').textContent =
+      feels !== temp ? `Feels ${feels}°` : '';
+    document.getElementById('weather-chip-hilo').innerHTML =
+      `<span class="wx-hi">${hiT}°</span><span class="wx-sep">/</span><span class="wx-lo">${loT}°</span>`;
+    document.getElementById('weather-chip-sub').innerHTML =
+      `Celina, TX · ${wxArrow(windDir)} ${wind} mph · ${hum}% hum` +
+      (sunset && now < sunset
+        ? ` · sunset ${sunset.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+        : sunrise ? ` · sunrise ${sunrise.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : '');
+
+    wxDrawSpark();
+    if (!WX.raf) WX.raf = requestAnimationFrame(wxFrame);
 
     const stripEl = document.getElementById('weather-alert-strip');
     if (alerts.length) {
       stripEl.style.display = 'block';
-      stripEl.innerHTML = alerts.slice(0,2).map(a =>
-        `<div><strong>⚠ ${a.properties.event}</strong> — ${(a.properties.headline||'').slice(0,160)}</div>`
+      stripEl.innerHTML = alerts.slice(0, 2).map(a =>
+        `<div><strong>⚠ ${a.properties.event}</strong> — ${(a.properties.headline || '').slice(0, 160)}</div>`
       ).join('<br>');
     } else {
       stripEl.style.display = 'none';
     }
-  } catch(e) {
+  } catch (e) {
     document.getElementById('weather-chip-desc').textContent = 'Weather unavailable';
+    console.warn('[weather]', e.message);
+  }
+}
+
+function initWeather() {
+  WX.scene = document.getElementById('wx-scene');
+  WX.spark = document.getElementById('wx-spark');
+  if (window.ResizeObserver && WX.spark) {
+    new ResizeObserver(() => wxDrawSpark()).observe(WX.spark);
   }
 }
 
@@ -3419,6 +3767,7 @@ setAmbientForTime();
 initDayArc();
 initGeoMap();
 initSearch();
+initWeather();
 attachTiltEffect();
 
 loadAll();
