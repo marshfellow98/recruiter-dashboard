@@ -653,6 +653,16 @@
   }
   @media (max-width: 1100px) { .geomap { height: 380px; } }
   /* ── Candidate search ─────────────────────────────────────────────────── */
+  /* The topbar is a stacking context (position:relative + z-index:1 in the base
+     sheet), so the results panel's own z-index could never lift it above
+     .news-section — a later sibling at the same level. Raising the topbar
+     itself is what actually fixes it; the modal (100) and alert overlay (300)
+     still sit above. */
+  /* space-between alone let the weather card and the search field touch once
+     the card grew. A gap guarantees separation regardless of content width. */
+  .topbar { z-index: 40; gap: 30px; }
+  .topbar-left-group { gap: 30px; }
+  .stats-row { gap: 26px; }
   .search-wrap { position: relative; }
   .search-input {
     width: 290px; padding: 11px 52px 11px 38px;
@@ -2586,6 +2596,8 @@ function arcResize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   ARC.w = Math.max(320, Math.round(box.width));
   ARC.h = Math.max(180, Math.round(box.height));
+  ARC.layoutDirty = true;
+  ARC.dirty = true;
   ARC.cv.width  = Math.round(ARC.w * dpr);
   ARC.cv.height = Math.round(ARC.h * dpr);
   ARC.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -2661,6 +2673,22 @@ function buildDayArc() {
     };
   });
 
+  /* Bail out if nothing actually changed.
+
+     renderSchedule() runs again every time a background load lands — contacts,
+     emails, call history — and each call used to rebuild the nodes and re-aim
+     the arc, restarting the easing animation. The arc would twitch several
+     times over the first few seconds for no reason. */
+  const sig = raw.map(r => r.m.start + '|' + (r.m.attendees?.[0] || r.m.title)).join(';')
+            + '#' + isTomorrow + '#' + state.selectedIdx;
+  if (sig === ARC.sig) {
+    const nowRawOnly = isTomorrow ? null : uOf(toMin(now));
+    ARC.nowU = nowRawOnly == null ? null : remapU(nowRawOnly, ARC.trueU, ARC.relaxedU);
+    ARC.dirty = true;        // the NOW marker moved; no re-layout needed
+    return;
+  }
+  ARC.sig = sig;
+
   // Spread the nodes so every one has room for a label. The printed time on
   // each node stays exact, so this costs spatial precision, not accuracy —
   // and an unreadable label costs far more than a slightly-shifted dot.
@@ -2681,6 +2709,8 @@ function buildDayArc() {
 
   const nowRaw = isTomorrow ? null : uOf(toMin(now));
   ARC.nowU = nowRaw == null ? null : remapU(nowRaw, ARC.trueU, ARC.relaxedU);
+  ARC.layoutDirty = true;
+  ARC.dirty = true;
   arcAimAtSelection();
 }
 
@@ -2688,6 +2718,8 @@ function buildDayArc() {
 // full swing would look impressive and push the rest of the day out of
 // position, which is the wrong trade on something read at a glance.
 function arcAimAtSelection() {
+  ARC.layoutDirty = true;
+  ARC.dirty = true;
   const n = ARC.nodes[state.selectedIdx];
   ARC.yawTarget = n ? clamp(-0.26 * n.u, -ARC_GEO.YAW_MAX, ARC_GEO.YAW_MAX) : 0;
 }
@@ -2705,16 +2737,109 @@ function arcHitTest(mx, my) {
   return best;
 }
 
+/* Label layout, computed only when something changes — not every frame.
+
+   Recomputing the row assignment on every draw meant that as the arc drifted
+   by a pixel, a label whose rectangle just cleared its neighbour would flip to
+   another row and back again, over and over. That is the jitter he described
+   as the words shooting up and down.
+
+   It is computed at the arc's RESTING orientation (yawTarget) so the answer
+   doesn't change mid-transition, then cached on each node. During an ease the
+   labels simply travel with their nodes, keeping their rows. */
+function layoutArcLabels() {
+  const ctx = ARC.ctx;
+  if (!ctx || !ARC.nodes.length) { ARC.labelRects = []; return; }
+  const R = arcR(), h = ARC.h;
+
+  const savedYaw = ARC.yaw;
+  ARC.yaw = ARC.yawTarget;          // lay out where the arc will come to rest
+
+  const LABEL_PAD_X = 14, LABEL_PAD_Y = 4, MAX_ROWS = 4;
+  const rects = [];
+  const rectFree = r => rects.every(o =>
+    r.x1 <= o.x0 || r.x0 >= o.x1 || r.y1 <= o.y0 || r.y0 >= o.y1);
+  const mkRect = (cx, cy, half, fs) => ({
+    x0: cx - half - LABEL_PAD_X, x1: cx + half + LABEL_PAD_X,
+    y0: cy - fs - LABEL_PAD_Y,   y1: cy + LABEL_PAD_Y
+  });
+
+  const priority = n => {
+    if (n.i === state.selectedIdx) return 0;
+    if (n.i === ARC.hover) return 1;
+    if (n.isNow) return 2;
+    return n.done ? 4 : 3;
+  };
+
+  const withPos = ARC.nodes.map(n => ({ n, p: arcProject(n.u, R) }));
+  withPos.forEach(({ n }) => { n.nameRow = -1; n.timeRow = -1; n.catRow = false; });
+
+  withPos.slice().sort((a, b) => priority(a.n) - priority(b.n) || b.p.d - a.p.d)
+    .forEach(({ n, p }) => {
+      const sel = n.i === state.selectedIdx;
+      const r = (8 + p.d * 8) * (sel ? 1.5 : 1);
+      const fs = Math.round(13 + p.d * 4);
+      n.labelFs = fs;
+
+      ctx.font = `${sel ? 700 : 600} ${fs + 3}px Inter, system-ui, sans-serif`;
+      const nameHalf = ctx.measureText(n.label).width / 2;
+      ctx.font = `700 ${fs}px 'Space Grotesk', Inter, system-ui, sans-serif`;
+      const timeHalf = ctx.measureText(n.time).width / 2;
+
+      let nameRect = null;
+      for (let row = 0; row < MAX_ROWS; row++) {
+        const y = p.y + r + fs + 13 + row * (fs + 21);
+        if (y > h - 14) break;
+        const rc = mkRect(p.x, y, nameHalf, fs + 3);
+        if (rectFree(rc)) { n.nameRow = row; nameRect = rc; break; }
+      }
+      if (n.nameRow < 0) return;             // no room; stays an unlabelled node
+
+      for (let row = 0; row < MAX_ROWS; row++) {
+        const y = p.y - r - 13 - row * (fs + 7);
+        if (y < 16) break;
+        const rc = mkRect(p.x, y, timeHalf, fs);
+        if (rectFree(rc)) { n.timeRow = row; rects.push(rc); break; }
+      }
+      rects.push(nameRect);
+
+      if (sel) {
+        ctx.font = `600 ${fs - 1}px Inter, system-ui, sans-serif`;
+        const cy = p.y + r + fs + 13 + n.nameRow * (fs + 21) + fs + 6;
+        const rc = mkRect(p.x, cy, ctx.measureText(n.catLabel || '').width / 2, fs - 1);
+        if (cy < h - 8 && rectFree(rc)) { n.catRow = true; rects.push(rc); }
+      }
+    });
+
+  ARC.yaw = savedYaw;
+  ARC.labelRects = rects;
+  ARC.unlabelled = ARC.nodes.filter(n => n.nameRow < 0).length;
+  ARC.layoutDirty = false;
+}
+
 function arcDraw(ts) {
   const ctx = ARC.ctx;
   if (!ctx) return;
   const w = ARC.w, h = ARC.h, R = arcR();
   ctx.clearRect(0, 0, w, h);
 
-  // Idle breath — enough motion to feel alive, never enough to move a label
-  // far enough to make it harder to read.
-  const breath = arcReduced() ? 0 : Math.sin(ts / 5600) * 0.035;
-  if (!ARC.drag) ARC.yaw += (ARC.yawTarget + breath - ARC.yaw) * 0.06;
+  // No idle drift. A permanent oscillation meant every label was re-rendered
+  // at slightly different sub-pixel coordinates 30 times a second, which reads
+  // as soft, shimmering text rather than as life — the opposite of what
+  // someone with low vision needs. The arc now moves only when he moves it.
+  //
+  // The easing is time-based, not per-frame. A fixed per-frame factor makes the
+  // transition twice as fast on a 120Hz display as on 60Hz, and crawl whenever
+  // the browser throttles frames — the settle took over a second when it
+  // should take about a third of one.
+  const dt = Math.min(0.12, Math.max(0, (ts - (ARC.lastTs || ts)) / 1000));
+  ARC.lastTs = ts;
+  if (!ARC.drag) {
+    const k = 1 - Math.pow(0.0015, dt);      // ~99.85% of the way in one second
+    ARC.yaw += (ARC.yawTarget - ARC.yaw) * k;
+    if (Math.abs(ARC.yawTarget - ARC.yaw) < 0.0008) ARC.yaw = ARC.yawTarget;
+  }
+  if (ARC.layoutDirty) layoutArcLabels();
 
   // Ground glow under the arc.
   const glow = ctx.createRadialGradient(w / 2, h * 0.74, 0, w / 2, h * 0.74, Math.max(w * 0.46, 300));
@@ -2848,103 +2973,41 @@ function arcDraw(ts) {
      instead. An unlabelled dot is recoverable — the schedule strip underneath
      lists everything at full size — but two names printed through each other
      are not readable at all, which defeats the point of the dashboard. */
-  /* Label placement — real 2D collision, not rows.
-     Three bugs got fixed here in sequence, and the last one is the subtle one:
-       1. Time labels had no collision handling at all.
-       2. Name clearance used a flat 104px when "Recruiter AI Movement" is over
-          300px wide, so neighbours that "passed" still printed through.
-       3. The row system offset each label from ITS OWN node's y — but the
-          nodes sit on an arc, so row 1 for a node near the top of the curve
-          lands at the same screen height as row 0 for one at the end. They
-          were never horizontal bands, which is why labels still collided.
-     So: measure each label, build its rectangle, and test it against every
-     rectangle already placed. Priority decides who gets first refusal, and
-     anything that cannot be placed is left unlabelled rather than printed on
-     top of a neighbour — the schedule strip below lists every event at full
-     size, so an unlabelled dot loses nothing. */
-  const LABEL_PAD_X = 14, LABEL_PAD_Y = 4, MAX_ROWS = 4;
-  const rects = [];
-  const rectFree = r => rects.every(o =>
-    r.x1 <= o.x0 || r.x0 >= o.x1 || r.y1 <= o.y0 || r.y0 >= o.y1);
-  const mkRect = (cx, cy, half, fs) => ({
-    x0: cx - half - LABEL_PAD_X, x1: cx + half + LABEL_PAD_X,
-    y0: cy - fs - LABEL_PAD_Y,   y1: cy + LABEL_PAD_Y
-  });
-
-  const priority = ({ n }) => {
-    if (n.i === state.selectedIdx) return 0;
-    if (n.i === ARC.hover) return 1;            // always name what he's pointing at
-    if (n.isNow) return 2;
-    return n.done ? 4 : 3;                      // upcoming beats already-done
-  };
-  const order = placed.slice().sort((a, b) =>
-    priority(a) - priority(b) || b.p.d - a.p.d);
-
+  // Labels were laid out by layoutArcLabels() — see the note there. Draw only.
   const labelled = new Set();
-  order.forEach(({ n, p }) => {
+  placed.forEach(({ n, p }) => {
+    if (n.nameRow < 0) return;
+    labelled.add(n.i);
     const sel = n.i === state.selectedIdx;
     const r = (8 + p.d * 8) * (sel ? 1.5 : 1);
-    const fs = Math.round(13 + p.d * 4);
+    const fs = n.labelFs;
     const op = Math.min(1, (0.62 + p.d * 0.38) * (n.done ? 0.68 : 1));
-
-    const nameFont = `${sel ? 700 : 600} ${fs + 3}px Inter, system-ui, sans-serif`;
-    const timeFont = `700 ${fs}px 'Space Grotesk', Inter, system-ui, sans-serif`;
-    ctx.font = nameFont;
-    const nameHalf = ctx.measureText(n.label).width / 2;
-    ctx.font = timeFont;
-    const timeHalf = ctx.measureText(n.time).width / 2;
-
-    // Names go below the node, stepping down until one fits on screen.
-    let nameY = null, nameRect = null;
-    for (let row = 0; row < MAX_ROWS; row++) {
-      const y = p.y + r + fs + 13 + row * (fs + 21);
-      if (y > h - 14) break;                    // would fall out of the card
-      const rc = mkRect(p.x, y, nameHalf, fs + 3);
-      if (rectFree(rc)) { nameY = y; nameRect = rc; break; }
-    }
-    if (nameY === null) return;                 // no room; stays an unlabelled node
-
-    // Times go above, same treatment.
-    let timeY = null, timeRect = null;
-    for (let row = 0; row < MAX_ROWS; row++) {
-      const y = p.y - r - 13 - row * (fs + 7);
-      if (y < 16) break;
-      const rc = mkRect(p.x, y, timeHalf, fs);
-      if (rectFree(rc)) { timeY = y; timeRect = rc; break; }
-    }
-
-    rects.push(nameRect);
-    if (timeRect) rects.push(timeRect);
-    labelled.add(n.i);
 
     ctx.textAlign = 'center';
     ctx.shadowColor = 'rgba(0,0,0,0.95)';
     ctx.shadowBlur = 10;
+    // Whole-pixel positions: text redrawn on fractional coordinates shimmers,
+    // which is most of what read as "not high res".
+    const px = Math.round(p.x);
 
-    if (timeY !== null) {
-      ctx.font = timeFont;
+    if (n.timeRow >= 0) {
+      ctx.font = `700 ${fs}px 'Space Grotesk', Inter, system-ui, sans-serif`;
       ctx.fillStyle = rgba(n.rgb, Math.min(1, op + 0.2).toFixed(3));
-      ctx.fillText(n.time, p.x, timeY);
+      ctx.fillText(n.time, px, Math.round(p.y - r - 13 - n.timeRow * (fs + 7)));
     }
 
-    ctx.font = nameFont;
+    const yName = Math.round(p.y + r + fs + 13 + n.nameRow * (fs + 21));
+    ctx.font = `${sel ? 700 : 600} ${fs + 3}px Inter, system-ui, sans-serif`;
     ctx.fillStyle = `rgba(246,248,251,${op.toFixed(3)})`;
-    ctx.fillText(n.label, p.x, nameY);
+    ctx.fillText(n.label, px, yName);
 
-    if (sel) {
-      const cy = nameY + fs + 6;
-      const rc = mkRect(p.x, cy, ctx.measureText(n.catLabel || '').width / 2, fs - 1);
-      if (cy < h - 8 && rectFree(rc)) {
-        ctx.font = `600 ${fs - 1}px Inter, system-ui, sans-serif`;
-        ctx.fillStyle = rgba(n.rgb, 0.92);
-        ctx.fillText((n.catLabel || '').toUpperCase(), p.x, cy);
-        rects.push(rc);
-      }
+    if (sel && n.catRow) {
+      ctx.font = `600 ${fs - 1}px Inter, system-ui, sans-serif`;
+      ctx.fillStyle = rgba(n.rgb, 0.92);
+      ctx.fillText((n.catLabel || '').toUpperCase(), px, yName + fs + 6);
     }
     ctx.shadowBlur = 0;
   });
-
-  ARC.labelRects = rects;   // exposed so tests can assert nothing overlaps
 
   // Anything that couldn't be labelled gets a faint ring, so it reads as a
   // real event worth hovering rather than a smudge on the curve.
@@ -2984,17 +3047,20 @@ function arcVignette(ctx, w, h) {
 // all day, so a free-running 60fps canvas would be a real battery cost.
 function arcFrame(ts) {
   ARC.raf = requestAnimationFrame(arcFrame);
-  if (document.hidden) return;
-  if (ts - ARC.lastDraw < 32) return;
+  if (document.hidden || !ARC.ready) return;
 
-  // With reduced motion there is no breath and no pulse, so once the arc has
-  // settled every frame would be identical. Stop redrawing until something
-  // actually changes.
-  if (arcReduced() && !ARC.drag && ARC.hover === ARC.lastHover &&
-      Math.abs(ARC.yaw - ARC.yawTarget) < 0.0005) return;
-  ARC.lastHover = ARC.hover;
+  const easing = Math.abs(ARC.yawTarget - ARC.yaw) > 0.0008 || ARC.drag;
+  const pulsing = !arcReduced() && ARC.nodes.some(n => n.isNow || n.i === state.selectedIdx);
+  const needed = easing || pulsing || ARC.layoutDirty || ARC.dirty;
+  if (!needed) return;
+
+  // 60fps while easing so a transition is smooth; slower for the idle pulse,
+  // which nothing depends on reading precisely.
+  const minGap = easing ? 8 : 40;
+  if (ts - ARC.lastDraw < minGap) return;
 
   ARC.lastDraw = ts;
+  ARC.dirty = false;
   arcDraw(ts);
 }
 
@@ -3021,7 +3087,9 @@ function initDayArc() {
       ARC.yaw = ARC.yawTarget =
         clamp(ARC.drag.yaw + dx * 0.0022, -ARC_GEO.YAW_MAX, ARC_GEO.YAW_MAX);
     }
+    const prevHover = ARC.hover;
     ARC.hover = arcHitTest(ARC.mx, ARC.my);
+    if (ARC.hover !== prevHover) { ARC.layoutDirty = true; ARC.dirty = true; }
     cv.style.cursor = ARC.drag ? 'grabbing' : (ARC.hover >= 0 ? 'pointer' : 'grab');
   });
 
@@ -3042,7 +3110,7 @@ function initDayArc() {
   };
   cv.addEventListener('pointerup', endDrag);
   cv.addEventListener('pointercancel', endDrag);
-  cv.addEventListener('pointerleave', () => { ARC.hover = -1; ARC.mx = ARC.my = null; });
+  cv.addEventListener('pointerleave', () => { ARC.hover = -1; ARC.mx = ARC.my = null; ARC.layoutDirty = true; ARC.dirty = true; });
 
   buildDayArc();
   if (!ARC.raf) ARC.raf = requestAnimationFrame(arcFrame);
@@ -3730,36 +3798,54 @@ async function loadAll() {
   setSync(false);
   document.getElementById('today-date').textContent = fmtDate(new Date());
   _allCallRecords = null; // force one fresh call-log fetch per page load
-  // Calendar first — the candidate lookup needs to know who is on the schedule
-  // before it can ask for them by name.
+
+  /* The calendar is awaited alone, then the page draws. Everything after it
+     only enriches what is already on screen.
+
+     Previously this awaited the calendar AND the candidate pool AND contacts
+     AND news AND weather before rendering anything. On a cold server the
+     candidate lookup triggers a full RecruiterFlow crawl — and since every
+     deploy restarts the process, that meant the dashboard sat blank for the
+     better part of a minute after each one. The schedule needs none of that. */
   await loadCalendar();
-  await Promise.all([loadCandidates(), loadContacts(), loadOverrides(), loadLocalNotes(), loadNews(), loadWeather()]);
 
   const now = new Date();
-  const next = state.todayMeetings.findIndex(m=>parseGraphDate(m.start)>=now);
-  state.selectedIdx = next===-1 ? 0 : next;
-
+  const next = state.todayMeetings.findIndex(m => parseGraphDate(m.start) >= now);
+  state.selectedIdx = next === -1 ? 0 : next;
   renderSchedule();
   renderCard();
   updateNextUp();
+  setSync(true);              // the schedule is usable; the rest fills in behind it
 
-  const names = state.todayMeetings.map(m=>m.attendees?.[0]||m.title);
-  await Promise.all(names.flatMap(n=>[loadEmails(n),loadCalls(n)]));
-  renderCard();
-  generatePrep();
-  setSync(true);
+  // Cheap, independent extras.
+  loadOverrides().then(() => { renderSchedule(); renderCard(); }).catch(() => {});
+  loadLocalNotes().then(() => renderCard()).catch(() => {});
+  loadWeather().catch(() => {});
+  loadNews().catch(() => {});
 
-  // If a candidate on today's schedule has no real data (blank stage/location),
-  // it likely means RecruiterFlow hadn't returned data in time — retry once quietly after 3s
+  // RecruiterFlow work, which may be slow on a cold cache. Each re-renders as
+  // it lands rather than holding the page hostage.
+  const candidatesDone = loadCandidates()
+    .then(() => { renderSchedule(); renderCard(); generatePrep(); })
+    .catch(() => {});
+  loadContacts().then(() => { renderSchedule(); renderCard(); }).catch(() => {});
+
+  // Email and call history for whoever is on the schedule.
+  const names = meetingNames();
+  Promise.all(names.flatMap(n => [loadEmails(n), loadCalls(n)]))
+    .then(() => renderCard())
+    .catch(() => {});
+
+  // One quiet retry if RecruiterFlow came back empty-handed for someone.
+  await candidatesDone;
   const anyBlank = names.some(n => {
     const c = state.candidates[n];
     return !c || (!c.stage && !c.location && !c.title);
   });
   if (anyBlank) {
-    setTimeout(async () => {
-      await loadCandidates();
-      renderCard();
-    }, 3000);
+    setTimeout(() => {
+      loadCandidates().then(() => { renderCard(); generatePrep(); }).catch(() => {});
+    }, 4000);
   }
 }
 
