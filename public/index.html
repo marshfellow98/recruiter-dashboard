@@ -792,6 +792,20 @@
     .weather-chip-temp { font-size: 32px; }
     .wx-spark { height: 42px; }
   }
+  /* The base sheet's .weather-chip.wx-* rules set the `background` shorthand,
+     which wiped the glass fill defined above (lower specificity). Re-assert the
+     surface here and let the condition contribute only a tint and a border. */
+  .weather-chip.wx-clear, .weather-chip.wx-cloudy, .weather-chip.wx-rain,
+  .weather-chip.wx-snow, .weather-chip.wx-storm {
+    background-color: rgba(13,15,19,0.74);
+    background-image: linear-gradient(157deg,
+      rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.02) 42%, rgba(255,255,255,0.006) 100%);
+  }
+  .weather-chip.wx-clear  { border-color: rgba(255,180,60,0.30); }
+  .weather-chip.wx-cloudy { border-color: rgba(150,165,190,0.28); }
+  .weather-chip.wx-rain   { border-color: rgba(60,130,255,0.32); }
+  .weather-chip.wx-snow   { border-color: rgba(201,210,222,0.32); }
+  .weather-chip.wx-storm  { border-color: rgba(255,69,58,0.45); }
 </style>
 </head>
 <body class="shell-fade-in">
@@ -1691,6 +1705,8 @@ function renderSchedule() {
   attachTiltEffect();   // the strip was just replaced, so re-bind the new nodes
   buildDayArc();        // keep the ring in step with the strip
   buildGeoMap();        // and the map
+  if (ARC.ready) arcDraw(performance.now());
+  if (MAP.ready) geoMapDraw(performance.now());
 }
 
 // ── Render main card ──────────────────────────
@@ -2246,7 +2262,18 @@ function wxDrawScene(ts) {
 }
 
 function wxDrawSpark() {
-  if (!WX.spark || !WX.data || !WX.data.hours || WX.data.hours.length < 2) return;
+  if (!WX.spark || !WX.data) return;
+  const hasHours = WX.data.hours && WX.data.hours.length >= 2;
+  if (!hasHours) {
+    // Clear it rather than leaving whatever was there, and say why it's empty.
+    const { ctx, w, h } = wxResizeCanvas(WX.spark);
+    ctx.clearRect(0, 0, w, h);
+    ctx.textAlign = 'center';
+    ctx.font = '600 11px Inter, system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(139,149,163,0.9)';
+    ctx.fillText('hourly forecast unavailable', w / 2, h / 2 + 4);
+    return;
+  }
   const { ctx, w, h } = wxResizeCanvas(WX.spark);
   const hrs = WX.data.hours;
   ctx.clearRect(0, 0, w, h);
@@ -2295,10 +2322,15 @@ function wxDrawSpark() {
   ctx.fillText(`${Math.round(hrs[0].temp)}° now`, 5, 11);
   ctx.textAlign = 'right';
   ctx.fillText(hrs[hrs.length - 1].label, w - 5, 11);
-  ctx.textAlign = 'center';
+  // The peak label is skipped near the right edge, where it printed straight
+  // through the end-hour label ("119AM" instead of "91°" and "11 AM").
   const maxI = temps.indexOf(hi);
-  ctx.fillStyle = 'rgba(255,205,120,0.95)';
-  ctx.fillText(`${Math.round(hi)}°`, Math.min(w - 16, Math.max(16, X(maxI))), Y(hi) - 6);
+  const maxX = X(maxI);
+  if (maxX > 58 && maxX < w - 72) {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,205,120,0.95)';
+    ctx.fillText(`${Math.round(hi)}°`, Math.round(maxX), Math.max(24, Math.round(Y(hi) - 6)));
+  }
 }
 
 function wxFrame(ts) {
@@ -2379,7 +2411,12 @@ async function loadWeather() {
         ? ` · sunset ${sunset.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
         : sunrise ? ` · sunrise ${sunrise.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : '');
 
+    // Draw both canvases synchronously right now. Relying on the rAF loop for
+    // first paint means a blank panel any time the browser throttles frames —
+    // a background window, a low-power mode, a heavily loaded tab. The loop is
+    // for animation; it should never be responsible for content existing.
     wxDrawSpark();
+    wxDrawScene(performance.now());
     if (!WX.raf) WX.raf = requestAnimationFrame(wxFrame);
 
     const stripEl = document.getElementById('weather-alert-strip');
@@ -2392,7 +2429,23 @@ async function loadWeather() {
       stripEl.style.display = 'none';
     }
   } catch (e) {
+    // A failed forecast used to leave two blank canvases sitting in the header.
+    // Fall back to a plausible sky for the current time of day so the panel
+    // still looks like a weather panel, and say plainly that it has no data.
     document.getElementById('weather-chip-desc').textContent = 'Weather unavailable';
+    document.getElementById('weather-chip-temp').textContent = '—';
+    document.getElementById('weather-chip-feels').textContent = '';
+    document.getElementById('weather-chip-hilo').textContent = '';
+    document.getElementById('weather-chip-sub').textContent = 'Celina, TX · no forecast right now';
+    const hr = new Date().getHours();
+    WX.data = {
+      cat: 'wx-cloudy',
+      progress: (hr >= 7 && hr <= 19) ? (hr - 7) / 12 : -1,
+      hot: false, hours: []
+    };
+    wxDrawScene(performance.now());
+    wxDrawSpark();
+    if (!WX.raf) WX.raf = requestAnimationFrame(wxFrame);
     console.warn('[weather]', e.message);
   }
 }
@@ -3113,6 +3166,7 @@ function initDayArc() {
   cv.addEventListener('pointerleave', () => { ARC.hover = -1; ARC.mx = ARC.my = null; ARC.layoutDirty = true; ARC.dirty = true; });
 
   buildDayArc();
+  arcDraw(performance.now());        // first paint must not wait on rAF
   if (!ARC.raf) ARC.raf = requestAnimationFrame(arcFrame);
 }
 
@@ -3455,6 +3509,7 @@ function initGeoMap() {
   });
 
   buildGeoMap();
+  geoMapDraw(performance.now());     // likewise
   if (!MAP.raf) MAP.raf = requestAnimationFrame(geoMapFrame);
 }
 
