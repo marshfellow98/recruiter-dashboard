@@ -665,7 +665,7 @@
   .stats-row { gap: 26px; }
   .search-wrap { position: relative; }
   .search-input {
-    width: 290px; padding: 11px 52px 11px 38px;
+    width: 290px; max-width: 100%; padding: 11px 52px 11px 38px;
     font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 500; color: var(--t1);
     background-color: rgba(13,15,19,0.74);
     background-image: linear-gradient(157deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01));
@@ -693,7 +693,7 @@
   }
   .search-panel {
     display: none; position: absolute; top: calc(100% + 10px); left: 0;
-    width: 440px; max-height: 60vh; overflow-y: auto; z-index: 60;
+    width: min(440px, calc(100vw - 32px)); max-height: 60vh; overflow-y: auto; z-index: 60;
     background-color: rgba(11,13,17,0.96);
     -webkit-backdrop-filter: blur(var(--blur)) saturate(165%);
             backdrop-filter: blur(var(--blur)) saturate(165%);
@@ -762,7 +762,7 @@
   /* ── Weather ───────────────────────────────────────────────────────────── */
   .weather-chip {
     display: flex; align-items: stretch; gap: 0;
-    padding: 0; overflow: hidden; width: 442px;
+    padding: 0; overflow: hidden; width: 442px; max-width: 100%;
     border-radius: 22px;
   }
   .wx-scene {
@@ -806,6 +806,102 @@
   .weather-chip.wx-rain   { border-color: rgba(60,130,255,0.32); }
   .weather-chip.wx-snow   { border-color: rgba(201,210,222,0.32); }
   .weather-chip.wx-storm  { border-color: rgba(255,69,58,0.45); }
+  /* ── Phones and small tablets ───────────────────────────────────────────
+     Fixed pixel widths in the header (a 442px weather card, a 440px results
+     panel) were forcing the layout viewport wider than the device — 542px on a
+     393px iPhone — so the browser scaled the whole page down and every label
+     shrank with it. Exactly the wrong failure for someone with low vision.
+     Everything in here either fills the width or stacks. */
+  @media (max-width: 760px) {
+    body { padding: 14px 16px 28px; }
+
+    .topbar { flex-direction: column; align-items: stretch; gap: 16px;
+              padding-bottom: 16px; }
+    .topbar-left-group { flex-direction: column; align-items: stretch; gap: 14px; }
+    .brand { font-size: 16px; }
+    .topbar-date { font-size: 19px; }
+    .stats-row { flex-wrap: wrap; gap: 12px; align-items: center; }
+
+    .weather-chip { width: 100%; }
+    .wx-scene { width: 104px; }
+    .weather-chip-temp { font-size: 34px; }
+    .wx-spark { height: 46px; }
+
+    .search-wrap { flex: 1 1 100%; order: -1; }   /* search first: it's the entry point */
+    .search-input { width: 100%; font-size: 16px; padding: 14px 52px 14px 38px; }
+    .search-input:focus { width: 100%; }
+    .search-kbd { display: none; }                 /* no Cmd key on a phone */
+    .search-panel { width: calc(100vw - 32px); left: 0; }
+    .search-row { padding: 14px 13px; }            /* 44px+ touch target */
+    .next-up { flex: 1 1 auto; }
+
+    /* The arc keeps working but gets shorter — on a phone it's a glance, and
+       the schedule cards underneath are the thing he actually taps. */
+    .dayarc { height: 216px; border-radius: 22px; }
+    .dayarc-hint { display: none; }                /* no drag hint on touch */
+
+    .geomap { height: 300px; border-radius: 22px; }
+    .geomap-missing { position: static; padding: 0 18px 14px; }
+
+    /* Full-width day toggle with real touch targets. */
+    .day-toggle { width: 100%; }
+    .day-btn { flex: 1; padding: 14px 10px; font-size: 15px; }
+
+    /* Schedule cards stack instead of scrolling sideways — a horizontal strip
+       hides most of the day behind a swipe. */
+    .schedule-strip { flex-direction: column; overflow-x: visible; gap: 10px; padding: 8px 0 14px; }
+    .sched-item { min-width: 0; width: 100%; padding: 18px 20px; }
+    .sched-name { font-size: 21px; }
+
+    .news-carousel { gap: 12px; }
+    .news-card { width: 250px; }
+
+    .main-card { padding: 1.4rem 1.2rem; border-radius: 22px; }
+    .cand-name { font-size: 36px; }
+    .cand-title { font-size: 16px; }
+    .info-row { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .contact-row { gap: 8px; }
+    .contact-btn { padding: 14px 16px; font-size: 15px; }
+    .tabs { gap: 2px; }
+    .tab { padding: 13px 6px; font-size: 14px; }
+    .notes-input { font-size: 16px; }              /* 16px stops iOS zooming on focus */
+    .notes-edit-btn { padding: 10px 14px; }
+
+    .layout { gap: 14px; }
+    .ai-card, .pipe-card { padding: 1.2rem; border-radius: 20px; }
+    .modal { padding: 1.4rem; border-radius: 22px; }
+  }
+
+  /* Touch rules keyed to the pointer, not the width.
+     All of the above is gated at 760px, so an iPad in portrait — 834px, and
+     entirely a touch device — kept the desktop's 14px inputs (which makes iOS
+     zoom the page on focus) and its 35px-high toggle buttons, well under the
+     44px a fingertip needs. Anything that depends on having a fingertip rather
+     than a mouse belongs here instead. */
+  @media (pointer: coarse) {
+    .search-input, .notes-input, .modal input, .modal textarea,
+    input[type="text"], input[type="search"], input[type="password"], textarea {
+      font-size: 16px;
+    }
+    .day-btn      { padding: 13px 18px; min-height: 46px; }
+    .contact-btn  { padding: 13px 16px; min-height: 46px; }
+    .tab          { min-height: 46px; }
+    .search-row   { min-height: 46px; }
+    .refresh-btn  { min-height: 46px; }
+    .notes-edit-btn { min-height: 44px; }
+    .sched-item   { min-height: 46px; }
+    .dayarc-hint  { display: none; }               /* no hover, no drag hint */
+  }
+
+  @media (max-width: 420px) {
+    .wx-scene { width: 88px; }
+    .weather-chip-temp { font-size: 30px; }
+    .weather-chip-sub { font-size: 12px; }
+    .dayarc { height: 196px; }
+    .geomap { height: 260px; }
+    .cand-name { font-size: 31px; }
+    .info-row { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body class="shell-fade-in">
@@ -858,7 +954,7 @@
       <div class="next-up-countdown" id="next-up-countdown">—</div>
     </div>
     <div class="sync-dot loading" id="sync-dot"></div>
-    <button onclick="loadAll()" style="background:rgba(22,24,30,0.82);border:1px solid rgba(255,255,255,0.14);color:#a8b2bf;border-radius:10px;padding:8px 16px;font-size:12px;font-weight:600;letter-spacing:0.05em;cursor:pointer;font-family:'Inter',sans-serif;">↻ Refresh</button>
+    <button class="refresh-btn" onclick="loadAll()" style="background:rgba(22,24,30,0.82);border:1px solid rgba(255,255,255,0.14);color:#a8b2bf;border-radius:10px;padding:8px 16px;font-size:12px;font-weight:600;letter-spacing:0.05em;cursor:pointer;font-family:'Inter',sans-serif;">↻ Refresh</button>
   </div>
 </div>
 
@@ -2710,29 +2806,39 @@ function buildDayArc() {
   const span = Math.max(hi - lo, 120);
   const uOf = min => clamp(((min - lo) / span) * 2 - 1, -1, 1);
 
-  ARC.nodes = raw.map((r, i) => {
-    const name = r.m.attendees?.[0] || r.m.title;
-    const cat = classifyMeeting(r.m);
-    const done = !isTomorrow && r.d < now && (now - r.d) > 30 * 60000;
-    const catLabel = cat === 'team' ? 'Team'
-                   : cat === 'personal' ? 'Personal'
-                   : cat === 'contact' ? (state.overrides[name] || 'Contact')
-                   : ((findCandidate(name) || {}).title || 'Candidate');
-    return {
-      i, u: uOf(toMin(r.d)),
-      label: name, time: fmtTime(r.m.start), catLabel,
-      rgb: arcColor(cat), done,
-      isNow: !isTomorrow && !done && Math.abs(now - r.d) < 90 * 60000
-    };
-  });
-
   /* Bail out if nothing actually changed.
 
      renderSchedule() runs again every time a background load lands — contacts,
      emails, call history — and each call used to rebuild the nodes and re-aim
      the arc, restarting the easing animation. The arc would twitch several
-     times over the first few seconds for no reason. */
-  const sig = raw.map(r => r.m.start + '|' + (r.m.attendees?.[0] || r.m.title)).join(';')
+     times over the first few seconds for no reason.
+
+     This check has to come BEFORE the nodes are rebuilt, not after. When it sat
+     below the rebuild, every background render replaced ARC.nodes with fresh
+     objects — carrying no cached label rows and no de-clustered u — and then
+     returned early without setting layoutDirty, so the label pass never ran
+     again and the arc drew as bare dots with the nodes back in their clustered
+     positions. Nothing below this line may touch ARC.nodes. */
+  /* Everything the nodes are built from goes into the signature, not just the
+     times and names. The category label resolves against candidate data that
+     arrives after the first render, and done/isNow flip as the day moves, so a
+     signature covering only start|name would freeze both. */
+  const desc = raw.map((r, i) => {
+    const name = r.m.attendees?.[0] || r.m.title;
+    const cat = classifyMeeting(r.m);
+    const done = !isTomorrow && r.d < now && (now - r.d) > 30 * 60000;
+    return {
+      r, i, name, cat, done,
+      isNow: !isTomorrow && !done && Math.abs(now - r.d) < 90 * 60000,
+      catLabel: cat === 'team' ? 'Team'
+              : cat === 'personal' ? 'Personal'
+              : cat === 'contact' ? (state.overrides[name] || 'Contact')
+              : ((findCandidate(name) || {}).title || 'Candidate')
+    };
+  });
+
+  const sig = desc.map(d => [d.r.m.start, d.name, d.catLabel, d.cat,
+                             d.done ? 1 : 0, d.isNow ? 1 : 0].join('|')).join(';')
             + '#' + isTomorrow + '#' + state.selectedIdx;
   if (sig === ARC.sig) {
     const nowRawOnly = isTomorrow ? null : uOf(toMin(now));
@@ -2741,6 +2847,12 @@ function buildDayArc() {
     return;
   }
   ARC.sig = sig;
+
+  ARC.nodes = desc.map(d => ({
+    i: d.i, u: uOf(toMin(d.r.d)),
+    label: d.name, time: fmtTime(d.r.m.start), catLabel: d.catLabel,
+    rgb: arcColor(d.cat), done: d.done, isNow: d.isNow
+  }));
 
   // Spread the nodes so every one has room for a label. The printed time on
   // each node stays exact, so this costs spatial precision, not accuracy —
@@ -2817,6 +2929,27 @@ function layoutArcLabels() {
     y0: cy - fs - LABEL_PAD_Y,   y1: cy + LABEL_PAD_Y
   });
 
+  /* Keep the label inside the canvas. On a phone the arc is about 360px wide
+     and a name like "Sarah Chen" is a quarter of that, so a node near either
+     end centred its label past the edge and the text was simply cut off —
+     "arah Chen". Centring is nudged, not the node, and the same x is handed to
+     the draw pass so the two never disagree. */
+  const EDGE = 6;
+  const clampX = (cx, half) => {
+    const lo = EDGE + half + LABEL_PAD_X, hi = ARC.w - EDGE - half - LABEL_PAD_X;
+    return hi <= lo ? ARC.w / 2 : clamp(cx, lo, hi);
+  };
+
+  /* The NOW badge is drawn before the labels and was not part of the layout,
+     so a time label could land straight on top of it. Reserve its box first. */
+  if (ARC.nowU != null) {
+    const np = arcProject(ARC.nowU, R);
+    ctx.font = `600 ${Math.round(10 * np.s)}px Inter, system-ui, sans-serif`;
+    const nh = ctx.measureText('NOW').width / 2;
+    rects.push({ x0: np.x - nh - 8, x1: np.x + nh + 8,
+                 y0: np.y - 40 * np.s, y1: np.y + 4 });
+  }
+
   const priority = n => {
     if (n.i === state.selectedIdx) return 0;
     if (n.i === ARC.hover) return 1;
@@ -2839,27 +2972,51 @@ function layoutArcLabels() {
       ctx.font = `700 ${fs}px 'Space Grotesk', Inter, system-ui, sans-serif`;
       const timeHalf = ctx.measureText(n.time).width / 2;
 
+      const nameCx = clampX(p.x, nameHalf);
+      n.nameX = nameCx;
+      n.timeX = clampX(p.x, timeHalf);
+
       let nameRect = null;
       for (let row = 0; row < MAX_ROWS; row++) {
         const y = p.y + r + fs + 13 + row * (fs + 21);
         if (y > h - 14) break;
-        const rc = mkRect(p.x, y, nameHalf, fs + 3);
+        const rc = mkRect(nameCx, y, nameHalf, fs + 3);
         if (rectFree(rc)) { n.nameRow = row; nameRect = rc; break; }
+      }
+      // The selected event is never left nameless, even when nothing is free —
+      // it's the one the card below is describing. Dropping that fallback in an
+      // earlier refactor meant narrow screens could render an arc with no
+      // labels at all. It goes in the roomiest row instead.
+      if (n.nameRow < 0 && sel) {
+        let best = 0, bestClear = -Infinity;
+        for (let row = 0; row < MAX_ROWS; row++) {
+          const y = p.y + r + fs + 13 + row * (fs + 21);
+          if (y > h - 14) break;
+          const rc = mkRect(nameCx, y, nameHalf, fs + 3);
+          const clear = rects.length
+            ? Math.min(...rects.map(o => Math.max(Math.abs((o.x0+o.x1)/2 - nameCx) - (o.x1-o.x0)/2,
+                                                  Math.abs((o.y0+o.y1)/2 - y) - (o.y1-o.y0)/2)))
+            : Infinity;
+          if (clear > bestClear) { bestClear = clear; best = row; nameRect = rc; }
+        }
+        n.nameRow = best;
       }
       if (n.nameRow < 0) return;             // no room; stays an unlabelled node
 
       for (let row = 0; row < MAX_ROWS; row++) {
         const y = p.y - r - 13 - row * (fs + 7);
         if (y < 16) break;
-        const rc = mkRect(p.x, y, timeHalf, fs);
+        const rc = mkRect(n.timeX, y, timeHalf, fs);
         if (rectFree(rc)) { n.timeRow = row; rects.push(rc); break; }
       }
       rects.push(nameRect);
 
       if (sel) {
         ctx.font = `600 ${fs - 1}px Inter, system-ui, sans-serif`;
+        const catHalf = ctx.measureText(n.catLabel || '').width / 2;
         const cy = p.y + r + fs + 13 + n.nameRow * (fs + 21) + fs + 6;
-        const rc = mkRect(p.x, cy, ctx.measureText(n.catLabel || '').width / 2, fs - 1);
+        n.catX = clampX(p.x, catHalf);
+        const rc = mkRect(n.catX, cy, catHalf, fs - 1);
         if (cy < h - 8 && rectFree(rc)) { n.catRow = true; rects.push(rc); }
       }
     });
@@ -3034,19 +3191,26 @@ function arcDraw(ts) {
     const sel = n.i === state.selectedIdx;
     const r = (8 + p.d * 8) * (sel ? 1.5 : 1);
     const fs = n.labelFs;
-    const op = Math.min(1, (0.62 + p.d * 0.38) * (n.done ? 0.68 : 1));
+    // Depth dims the other labels, never the selected one: it sits on the far
+    // side of the arc as often as not, and the event the card below is
+    // describing should be the most legible name on the canvas, not the least.
+    const op = sel ? 1 : Math.min(1, (0.62 + p.d * 0.38) * (n.done ? 0.68 : 1));
 
     ctx.textAlign = 'center';
     ctx.shadowColor = 'rgba(0,0,0,0.95)';
     ctx.shadowBlur = 10;
     // Whole-pixel positions: text redrawn on fractional coordinates shimmers,
     // which is most of what read as "not high res".
-    const px = Math.round(p.x);
+    // The x comes from the layout pass, which nudged it away from the canvas
+    // edge if the name would otherwise be clipped. Re-deriving it from p.x here
+    // would put the text somewhere the collision boxes know nothing about.
+    const px = Math.round(n.nameX != null ? n.nameX : p.x);
 
     if (n.timeRow >= 0) {
       ctx.font = `700 ${fs}px 'Space Grotesk', Inter, system-ui, sans-serif`;
       ctx.fillStyle = rgba(n.rgb, Math.min(1, op + 0.2).toFixed(3));
-      ctx.fillText(n.time, px, Math.round(p.y - r - 13 - n.timeRow * (fs + 7)));
+      ctx.fillText(n.time, Math.round(n.timeX != null ? n.timeX : p.x),
+                   Math.round(p.y - r - 13 - n.timeRow * (fs + 7)));
     }
 
     const yName = Math.round(p.y + r + fs + 13 + n.nameRow * (fs + 21));
@@ -3057,7 +3221,8 @@ function arcDraw(ts) {
     if (sel && n.catRow) {
       ctx.font = `600 ${fs - 1}px Inter, system-ui, sans-serif`;
       ctx.fillStyle = rgba(n.rgb, 0.92);
-      ctx.fillText((n.catLabel || '').toUpperCase(), px, yName + fs + 6);
+      ctx.fillText((n.catLabel || '').toUpperCase(),
+                   Math.round(n.catX != null ? n.catX : p.x), yName + fs + 6);
     }
     ctx.shadowBlur = 0;
   });
@@ -3078,7 +3243,10 @@ function arcDraw(ts) {
     ctx.textAlign = 'right';
     ctx.font = '600 11px Inter, system-ui, sans-serif';
     ctx.fillStyle = 'rgba(139,149,163,0.9)';
-    ctx.fillText(`+${ARC.unlabelled} more · hover to name`, w - 22, 30);
+    // "hover" means nothing on a phone.
+    const verb = (matchMedia('(hover: none)').matches ||
+                  navigator.maxTouchPoints > 0) ? 'tap' : 'hover';
+    ctx.fillText(`+${ARC.unlabelled} more · ${verb} to name`, w - 22, 30);
   }
 
   arcVignette(ctx, w, h);
@@ -3237,10 +3405,16 @@ function mapFit() {
   const lon0 = (minLon + maxLon) / 2;
   const kx = Math.max(0.35, Math.cos(lat0 * Math.PI / 180));
 
-  // Generous padding on purpose. Each pin carries a two-line label *below* it
-  // plus a halo, so fitting the pins themselves to the frame puts the labels
-  // off the bottom edge and into the chip row.
-  const padX = 150, padY = 110;
+  /* Generous padding on purpose. Each pin carries a two-line label *below* it
+     plus a halo, so fitting the pins themselves to the frame puts the labels
+     off the bottom edge and into the chip row.
+
+     Relative, with the desktop numbers as the caps. Fixed 150/110 padding on a
+     361x261 phone panel left a 61px-wide fit box, so the scale collapsed and
+     the map drew the entire country with every pin in one corner. On a wide
+     panel the caps bind and the desktop framing is unchanged. */
+  const padX = clamp(MAP.w * 0.15, 30, 150);
+  const padY = clamp(MAP.h * 0.28, 34, 110);
   const innerW = MAP.w - padX * 2;
   const innerH = MAP.h - padY * 2;
   const aspect = innerW / innerH;
@@ -3428,32 +3602,99 @@ function geoMapDraw(ts) {
     labels.push({ p, s: { x: s.x, y }, sel, r, a });
   });
 
-  // ── Labels, stacked to avoid collisions ──
-  const rows = [[], []];
+  /* ── Labels ──
+     This used to stack into two rows on a fixed 112px x-separation test, and
+     when both rows were taken it drew in row 0 anyway. On a phone the map is
+     about 360px wide, so every pin is within 112px of every other one and all
+     four names printed through each other in a single illegible knot.
+
+     Measured rectangles instead, four rows, x nudged in from the edges, and a
+     label that finds no room is dropped rather than overprinted — the pin
+     still shows, and the schedule below names everyone at full size. The
+     selected pin is laid out first so it is never the one dropped. */
+  const taken = [];
+  const free = r => taken.every(o =>
+    r.x1 <= o.x0 || r.x0 >= o.x1 || r.y1 <= o.y0 || r.y0 >= o.y1);
+  const MAP_ROWS = 4;
+  let mapDropped = 0;
+
   labels.sort((l1, l2) => (l2.sel ? 1 : 0) - (l1.sel ? 1 : 0));
   labels.forEach(({ p, s, sel, r, a }) => {
-    let row = 0;
-    if (rows[0].some(x => Math.abs(x - s.x) < 112)) row = 1;
-    if (row === 1 && rows[1].some(x => Math.abs(x - s.x) < 112)) row = 0;
-    rows[row].push(s.x);
-
     const fs = sel ? 16 : 14;
-    const yName = s.y + r + fs + 8 + row * (fs + 17);
+    const place = [p.city, p.state].filter(Boolean).join(', ') +
+                  (p.precision === 'state' ? ' (approx)' : '');
+
+    ctx.font = `${sel ? 700 : 600} ${fs}px Inter, system-ui, sans-serif`;
+    const nameHalf = ctx.measureText(p.name).width / 2;
+    ctx.font = `600 ${fs - 3}px Inter, system-ui, sans-serif`;
+    const placeHalf = ctx.measureText(place).width / 2;
+    const half = Math.max(nameHalf, placeHalf);
+
+    // The 8px is the label box's own padding — clamping to `half` alone let the
+    // box hang two pixels off the canvas.
+    const lo = 6 + half + 8, hi = w - 6 - half - 8;
+    const cx = hi <= lo ? w / 2 : Math.min(Math.max(s.x, lo), hi);
+
+    const boxAt = yName => ({ x0: cx - half - 8, x1: cx + half + 8,
+                              y0: yName - fs - 4, y1: yName + fs + 6 });
+    let yName = null, rect = null;
+    for (let i = 0; i < MAP_ROWS; i++) {
+      const y = s.y + r + fs + 8 + i * (fs + 17);
+      const rc = boxAt(y);
+      if (rc.y1 > h - 6) break;
+      if (free(rc)) { yName = y; rect = rc; break; }
+    }
+    // Below the pin is the convention, but a pin low on the map runs out of
+    // canvas before it runs out of rows. Try above before giving up on it.
+    if (yName == null) {
+      for (let i = 0; i < MAP_ROWS; i++) {
+        const y = s.y - r - 12 - i * (fs + 17) - fs;
+        const rc = boxAt(y);
+        if (rc.y0 < 34) break;               // clear of the panel's own heading
+        if (free(rc)) { yName = y; rect = rc; break; }
+      }
+    }
+    if (yName == null) {
+      // Nothing free. Ring the pin so it still reads as a placed candidate.
+      mapDropped++;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r + 5, 0, Math.PI * 2);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = rgba(p.rgb, 0.45 * a);
+      ctx.stroke();
+      return;
+    }
+    taken.push(rect);
+
+    /* A label pushed down a row or nudged in from the edge can end up well away
+       from its pin, and then it is anyone's guess which dot it belongs to.
+       A hairline leader answers that without adding clutter to the common case
+       where the label sits directly under its own pin. */
+    const above = yName < s.y;
+    if (Math.abs(yName - s.y) > r + fs + 24 || Math.abs(cx - s.x) > 22) {
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y + (above ? -r - 2 : r + 2));
+      ctx.lineTo(cx, above ? yName + 6 : yName - fs - 3);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = rgba(p.rgb, 0.32 * a);
+      ctx.stroke();
+    }
+
     ctx.textAlign = 'center';
     ctx.shadowColor = 'rgba(0,0,0,0.92)';
     ctx.shadowBlur = 9;
 
     ctx.font = `${sel ? 700 : 600} ${fs}px Inter, system-ui, sans-serif`;
     ctx.fillStyle = `rgba(246,248,251,${a.toFixed(3)})`;
-    ctx.fillText(p.name, s.x, yName);
+    ctx.fillText(p.name, Math.round(cx), Math.round(yName));
 
     ctx.font = `600 ${fs - 3}px Inter, system-ui, sans-serif`;
     ctx.fillStyle = rgba(p.rgb, (0.92 * a).toFixed(3));
-    const place = [p.city, p.state].filter(Boolean).join(', ') +
-                  (p.precision === 'state' ? ' (approx)' : '');
-    ctx.fillText(place, s.x, yName + fs + 2);
+    ctx.fillText(place, Math.round(cx), Math.round(yName + fs + 2));
     ctx.shadowBlur = 0;
   });
+  MAP.labelRects = taken;
+  MAP.dropped = mapDropped;
 
   if (!MAP.pins.length) {
     ctx.textAlign = 'center';
