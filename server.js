@@ -932,15 +932,24 @@ async function handleAPI(pathname, query) {
     const since = new Date(Date.now() - days * 86400000).toISOString();
     const top = Math.min(Math.max(Number(query.limit) || 40, 1), 100);
 
-    // A deterministic $filter, not $search: Microsoft documents search as
-    // eventually consistent, and it returned different results run to run when
-    // the email panel relied on it.
+    /* One request per sender, each filtering on a single property.
+
+       A deterministic $filter, not $search: Microsoft documents search as
+       eventually consistent, and it returned different results run to run when
+       the email panel relied on it.
+
+       The senders were originally OR'd together with "receivedDateTime ge" and
+       sorted, which Graph rejected outright — 400 InefficientFilter, "the
+       restriction or sort order is too complex for this operation". Mail
+       queries are fussy about combining an OR across one property with a range
+       over another and a sort over a third. Splitting it keeps each query to
+       the shape Graph reliably serves, and the date bound is dropped from the
+       query entirely because the window is enforced below anyway. */
     const senders = ['no-reply@otter.ai', 'notifications@otter.ai', 'hello@otter.ai'];
-    const filter = '(' + senders.map(s => `from/emailAddress/address eq '${s}'`).join(' or ') + ')' +
-                   ` and receivedDateTime ge ${since}`;
-    const res = await fetchJSON({
+    const pages = await Promise.all(senders.map(s => fetchJSON({
       hostname: 'graph.microsoft.com',
-      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$filter=${encodeURIComponent(filter)}` +
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages` +
+            `?$filter=${encodeURIComponent(`from/emailAddress/address eq '${s.replace(/'/g, "''")}'`)}` +
             `&$select=subject,from,receivedDateTime,bodyPreview,webLink,body` +
             // %20, not a literal space: Node's http client throws
             // "Request path contains unescaped characters" on a raw space in
@@ -948,11 +957,17 @@ async function handleAPI(pathname, query) {
             `&$orderby=receivedDateTime%20desc&$top=${top}`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}`, 'ConsistencyLevel': 'eventual' }
-    });
-    if (res.status !== 200) {
-      return { error: true, status: res.status, graph: res.body,
+    }).catch(e => ({ status: 0, body: { error: { message: e.message } } }))));
+
+    // One dead alias must not take the others down with it; only a clean sweep
+    // of failures is reported as an error.
+    const ok = pages.filter(r => r.status === 200);
+    if (!ok.length) {
+      const first = pages[0] || {};
+      return { error: true, status: first.status, graph: first.body,
                hint: 'Could not read the mailbox for Otter summary emails.' };
     }
+    const res = { status: 200, body: { value: ok.flatMap(r => r.body?.value || []) } };
 
     /* The window is re-checked here rather than left to the query. Graph's
        $filter on receivedDateTime is reliable, unlike its $search, but Zoom
@@ -981,7 +996,15 @@ async function handleAPI(pathname, query) {
           text: recapText(m)
         };
       });
-    return { count: items.length, source: 'otter', days, recaps: items };
+
+    // Each sender's query came back sorted, but the merge of three is not, and
+    // a message could in principle appear in more than one of them.
+    const seen = new Set();
+    const list = items
+      .filter(r => (r.id && seen.has(r.id)) ? false : (seen.add(r.id), true))
+      .sort((a, b) => Date.parse(b.received) - Date.parse(a.received))
+      .slice(0, top);
+    return { count: list.length, source: 'otter', days, recaps: list };
   }
 
   // Resolve only the attendees on the schedule. Replaces the old behaviour of
