@@ -315,6 +315,49 @@ async function getMSToken() {
 // process happened to restart. It also meant a scope added in the Zoom
 // Marketplace never took effect on a running instance, because the old
 // scope-less token was still being handed out.
+/* "Jeff Colby, Jacob, & Mark" -> ["Jeff Colby", "Jacob", "Mark"].
+   Otter names the attendees in the subject, which is what makes a recap
+   attachable to a person at all. Some entries are a first name only; those are
+   kept as-is and the matching side decides what is safe to do with them. */
+function parseRecapPeople(title) {
+  return String(title || '')
+    .split(/\s*(?:,|&|\band\b|\+)\s*/i)
+    .map(s => s.replace(/\s+/g, ' ').trim())
+    .filter(s => s && s.length > 1 && !/^(call|meeting|sync|interview|notes)$/i.test(s));
+}
+
+/* Otter's mail is HTML wrapped around the summary. The full body is used when
+   Graph returns it, falling back to bodyPreview, which Graph truncates at ~255
+   characters — the reason the recap read as a cut-off sentence at first.
+   Kept as text: this string is inserted into the page as text, never HTML, so
+   the mail's own markup and links cannot execute or reflow the card. */
+function recapText(msg) {
+  const raw = msg?.body?.content || '';
+  if (!raw) return String(msg?.bodyPreview || '').trim();
+  const text = raw
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<\/(p|div|tr|li|h[1-6])>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+    .replace(/&#39;|&apos;/gi, "'").replace(/&quot;/gi, '"')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .split('\n').map(l => l.trim()).filter(Boolean).join('\n');
+  // Otter appends app-store links and unsubscribe boilerplate; cut at the first
+  // marker so the card shows the summary rather than the footer.
+  const cut = text.search(/(Get the Otter|Download Otter|Unsubscribe|View in Otter|©\s*\d{4}\s*Otter)/i);
+  const body = cut > 80 ? text.slice(0, cut) : text;
+  // Otter opens with "Shane Graham has shared notes from <title>, <date>",
+  // which is exactly what the card's own header already says.
+  return body.trim()
+    .replace(/^[^\n]*has shared notes from[^\n]*\n?/i, '')
+    .trim()
+    .slice(0, 6000);
+}
+
 async function getZoomToken() {
   if (tokens.zoom && tokens.zoomExpiry && Date.now() < tokens.zoomExpiry) {
     return tokens.zoom;
@@ -870,6 +913,72 @@ async function handleAPI(pathname, query) {
       }
     });
     return res2.body;
+  }
+
+  /* ── Meeting recaps, from the notetaker that is actually being used ──────
+     Zoom's AI Companion is not writing these. Otter.ai joins his calls as a
+     participant and emails the summary: Zoom's own API honestly reports six
+     summaries, the newest from 14 January, while Otter sent "Meeting Summary
+     for Jeff Colby, Jacob, & Mark Call" two days ago. Zoom was the wrong
+     product to ask, so this reads the Otter mail instead.
+
+     It is also the better source. Otter puts the attendees in the subject
+     line, whereas most of his Zoom calls are titled "Shane Graham's Personal
+     Meeting Room" and name nobody, so a Zoom recap frequently could not be
+     attached to anyone at all. */
+  if (pathname === '/api/recaps') {
+    const token = await getMSToken();
+    const days = Math.min(Math.max(Number(query.days) || 60, 1), 365);
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const top = Math.min(Math.max(Number(query.limit) || 40, 1), 100);
+
+    // A deterministic $filter, not $search: Microsoft documents search as
+    // eventually consistent, and it returned different results run to run when
+    // the email panel relied on it.
+    const senders = ['no-reply@otter.ai', 'notifications@otter.ai', 'hello@otter.ai'];
+    const filter = '(' + senders.map(s => `from/emailAddress/address eq '${s}'`).join(' or ') + ')' +
+                   ` and receivedDateTime ge ${since}`;
+    const res = await fetchJSON({
+      hostname: 'graph.microsoft.com',
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$filter=${encodeURIComponent(filter)}` +
+            `&$select=subject,from,receivedDateTime,bodyPreview,webLink,body` +
+            `&$orderby=receivedDateTime desc&$top=${top}`,
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}`, 'ConsistencyLevel': 'eventual' }
+    });
+    if (res.status !== 200) {
+      return { error: true, status: res.status, graph: res.body,
+               hint: 'Could not read the mailbox for Otter summary emails.' };
+    }
+
+    /* The window is re-checked here rather than left to the query. Graph's
+       $filter on receivedDateTime is reliable, unlike its $search, but Zoom
+       silently ignored exactly this kind of date bound on its own endpoint and
+       handed back eight-month-old records as though they were current. One
+       comparison is cheaper than being wrong the same way twice. */
+    const floor = Date.parse(since);
+    const items = (res.body?.value || [])
+      .filter(m => /summary|notes/i.test(m.subject || ''))
+      .filter(m => {
+        const t = Date.parse(m.receivedDateTime);
+        return Number.isFinite(t) && t >= floor;
+      })
+      .map(m => {
+        const title = String(m.subject || '')
+          .replace(/^\s*(meeting\s+summary|notes)\s+for\s+/i, '')
+          .replace(/\s+call\s*$/i, '')
+          .trim();
+        return {
+          id: m.id,
+          title,
+          subject: m.subject,
+          received: m.receivedDateTime,
+          webLink: m.webLink,
+          people: parseRecapPeople(title),
+          text: recapText(m)
+        };
+      });
+    return { count: items.length, source: 'otter', days, recaps: items };
   }
 
   // Resolve only the attendees on the schedule. Replaces the old behaviour of
