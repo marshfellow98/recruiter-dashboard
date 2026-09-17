@@ -946,18 +946,32 @@ async function handleAPI(pathname, query) {
        the shape Graph reliably serves, and the date bound is dropped from the
        query entirely because the window is enforced below anyway. */
     const senders = ['no-reply@otter.ai', 'notifications@otter.ai', 'hello@otter.ai'];
-    const pages = await Promise.all(senders.map(s => fetchJSON({
+    const SELECT = '$select=subject,from,receivedDateTime,bodyPreview,webLink,body';
+    const ask = path => fetchJSON({
       hostname: 'graph.microsoft.com',
-      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages` +
-            `?$filter=${encodeURIComponent(`from/emailAddress/address eq '${s.replace(/'/g, "''")}'`)}` +
-            `&$select=subject,from,receivedDateTime,bodyPreview,webLink,body` +
-            // %20, not a literal space: Node's http client throws
-            // "Request path contains unescaped characters" on a raw space in
-            // the path, which surfaced as a blanket 500 from this endpoint.
-            `&$orderby=receivedDateTime%20desc&$top=${top}`,
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?${path}`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}`, 'ConsistencyLevel': 'eventual' }
-    }).catch(e => ({ status: 0, body: { error: { message: e.message } } }))));
+    }).catch(e => ({ status: 0, body: { error: { message: e.message } } }));
+
+    /* Two shapes per sender, because this mailbox refuses the obvious one.
+       Filtering on the sender AND sorting by date is itself "too complex" here
+       — the sort is what tips it over, so the first attempt drops $orderby and
+       the ordering is done in code below, where it has to happen anyway to
+       merge the senders. If even the bare filter is refused, fall back to
+       $search, which cannot be combined with $filter but is served. (The
+       long-standing /api/emails query has the same filter-and-sort shape and
+       has been quietly falling back to search for the same reason.) */
+    const pages = await Promise.all(senders.map(async s => {
+      const esc = s.replace(/'/g, "''");
+      const byFilter = await ask(
+        `$filter=${encodeURIComponent(`from/emailAddress/address eq '${esc}'`)}&${SELECT}&$top=${top}`);
+      if (byFilter.status === 200) return byFilter;
+      // %20, not a literal space: Node's http client throws "Request path
+      // contains unescaped characters" on a raw space in the path.
+      const bySearch = await ask(`$search=${encodeURIComponent(`"from:${s}"`)}&${SELECT}&$top=${top}`);
+      return bySearch.status === 200 ? bySearch : byFilter;
+    }));
 
     // One dead alias must not take the others down with it; only a clean sweep
     // of failures is reported as an error.
