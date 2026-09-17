@@ -957,8 +957,25 @@ async function handleAPI(pathname, query) {
     const iso = d => d.toISOString().slice(0, 10);
     const to = new Date();
     const from = new Date(to.getTime() - days * 86400000);
-    const res = await zoomGet(
-      `/v2/users/me/meeting_summaries?from=${iso(from)}&to=${iso(to)}&page_size=30`);
+
+    /* Zoom does not honour from/to on this endpoint — measured against the real
+       account, days=1 and days=90 returned an identical six records dated eight
+       to eleven months outside both windows. The documented path is the
+       account-level one; the /users/me variant answers but ignores the dates.
+       Try the documented path first, fall back to the old one if the account
+       type rejects it, and then filter by date HERE rather than trusting the
+       API to have done it. A panel headed "last 14 days" showing an eight-month
+       old recap is worse than an empty one. */
+    let res = await zoomGet(
+      `/v2/meetings/meeting_summaries?from=${iso(from)}&to=${iso(to)}&page_size=30`);
+    let endpoint = 'account';
+    if (res.status === 404 || res.status === 400) {
+      const alt = await zoomGet(
+        `/v2/users/me/meeting_summaries?from=${iso(from)}&to=${iso(to)}&page_size=30`);
+      // Keep whichever actually answered, preferring the fallback only if it did
+      // better, so a genuine scope error still surfaces below.
+      if (alt.status < 400) { res = alt; endpoint = 'user'; }
+    }
     if (res.status >= 400) {
       // Zoom's granular scope names are not what the docs' older naming
       // suggests: the live API asks for meeting:read:list_summaries:admin,
@@ -972,7 +989,7 @@ async function handleAPI(pathname, query) {
                    'app, then retry with ?fresh=1'
                  : undefined };
     }
-    const list = (res.body?.summaries || []).map(s => ({
+    const all = (res.body?.summaries || []).map(s => ({
       uuid: s.meeting_uuid,
       meetingId: s.meeting_id,
       topic: s.meeting_topic,
@@ -980,7 +997,22 @@ async function handleAPI(pathname, query) {
       end: s.meeting_end_time,
       host: s.meeting_host_email
     }));
-    return { count: list.length, from: iso(from), to: iso(to), summaries: list };
+    // Inclusive of both end dates, in UTC, matching the strings sent upstream.
+    const lo = from.getTime() - (from.getTime() % 86400000);
+    const hi = to.getTime() - (to.getTime() % 86400000) + 86400000;
+    const inWindow = s => {
+      const t = Date.parse(s.start);
+      return Number.isFinite(t) && t >= lo && t < hi;
+    };
+    const list = all.filter(inWindow)
+                    .sort((a, b) => Date.parse(b.start) - Date.parse(a.start));
+    // newest/returned make it obvious when Zoom holds recaps but none are recent,
+    // which otherwise looks identical to the integration being broken.
+    return { count: list.length, from: iso(from), to: iso(to), summaries: list,
+             endpoint, returned: all.length,
+             newest: all.length
+               ? all.map(s => s.start).sort().slice(-1)[0]
+               : null };
   }
 
   // The full recap for one meeting: overview, section details and next steps.
