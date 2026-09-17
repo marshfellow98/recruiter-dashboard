@@ -790,6 +790,9 @@
     padding: 9px 2px; min-height: 40px; display: flex; align-items: center;
   }
   .zoom-recap-more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .zoom-recap-body > div + div { margin-top: 10px; }
+  .zoom-recap-link { color: #8ec5ff; text-decoration: none; letter-spacing: 0.06em; }
+  .zoom-recap-link:hover { text-decoration: underline; }
   .notes-editor { display: none; }
   .notes-editor.open { display: block; }
   .notes-input {
@@ -2765,6 +2768,23 @@ function arcColor(cat) {
 
 function arcR() { return Math.min(ARC.w * ARC_GEO.RFRAC, ARC_GEO.RMAX); }
 
+/* Keep a label inside the canvas. On a phone the arc is about 360px wide and a
+   name like "Sarah Chen" is a quarter of that, so a node near either end
+   centred its label past the edge and the text was simply cut off — "arah
+   Chen". The label is nudged in, never the node.
+
+   This has to be applied at DRAW time against the node's current x, not cached
+   as an absolute position by the layout pass. The layout runs at the arc's
+   resting orientation while a drag draws it at whatever angle it is passing
+   through, so a cached x stayed put while its sphere moved — the names and
+   times visibly came unstuck from the spheres as soon as he rotated the ring.
+   Only the measured text width is cached; the position follows the node. */
+function arcClampX(cx, half) {
+  const EDGE = 6, PAD = 14;
+  const lo = EDGE + half + PAD, hi = ARC.w - EDGE - half - PAD;
+  return hi <= lo ? ARC.w / 2 : clamp(cx, lo, hi);
+}
+
 // u ∈ [-1, 1] — linear in time. Returns screen position, perspective scale,
 // and a 0-far/1-near depth term used for size, brightness and draw order.
 function arcProject(u, R) {
@@ -2979,16 +2999,7 @@ function layoutArcLabels() {
     y0: cy - fs - LABEL_PAD_Y,   y1: cy + LABEL_PAD_Y
   });
 
-  /* Keep the label inside the canvas. On a phone the arc is about 360px wide
-     and a name like "Sarah Chen" is a quarter of that, so a node near either
-     end centred its label past the edge and the text was simply cut off —
-     "arah Chen". Centring is nudged, not the node, and the same x is handed to
-     the draw pass so the two never disagree. */
-  const EDGE = 6;
-  const clampX = (cx, half) => {
-    const lo = EDGE + half + LABEL_PAD_X, hi = ARC.w - EDGE - half - LABEL_PAD_X;
-    return hi <= lo ? ARC.w / 2 : clamp(cx, lo, hi);
-  };
+  const clampX = (cx, half) => arcClampX(cx, half);
 
   /* The NOW badge is drawn before the labels and was not part of the layout,
      so a time label could land straight on top of it. Reserve its box first. */
@@ -3022,9 +3033,10 @@ function layoutArcLabels() {
       ctx.font = `700 ${fs}px 'Space Grotesk', Inter, system-ui, sans-serif`;
       const timeHalf = ctx.measureText(n.time).width / 2;
 
+      // Cache the measured widths, not positions — see arcClampX().
       const nameCx = clampX(p.x, nameHalf);
-      n.nameX = nameCx;
-      n.timeX = clampX(p.x, timeHalf);
+      n.nameHalf = nameHalf;
+      n.timeHalf = timeHalf;
 
       let nameRect = null;
       for (let row = 0; row < MAX_ROWS; row++) {
@@ -3056,7 +3068,7 @@ function layoutArcLabels() {
       for (let row = 0; row < MAX_ROWS; row++) {
         const y = p.y - r - 13 - row * (fs + 7);
         if (y < 16) break;
-        const rc = mkRect(n.timeX, y, timeHalf, fs);
+        const rc = mkRect(clampX(p.x, timeHalf), y, timeHalf, fs);
         if (rectFree(rc)) { n.timeRow = row; rects.push(rc); break; }
       }
       rects.push(nameRect);
@@ -3065,8 +3077,8 @@ function layoutArcLabels() {
         ctx.font = `600 ${fs - 1}px Inter, system-ui, sans-serif`;
         const catHalf = ctx.measureText(n.catLabel || '').width / 2;
         const cy = p.y + r + fs + 13 + n.nameRow * (fs + 21) + fs + 6;
-        n.catX = clampX(p.x, catHalf);
-        const rc = mkRect(n.catX, cy, catHalf, fs - 1);
+        n.catHalf = catHalf;
+        const rc = mkRect(clampX(p.x, catHalf), cy, catHalf, fs - 1);
         if (cy < h - 8 && rectFree(rc)) { n.catRow = true; rects.push(rc); }
       }
     });
@@ -3251,15 +3263,14 @@ function arcDraw(ts) {
     ctx.shadowBlur = 10;
     // Whole-pixel positions: text redrawn on fractional coordinates shimmers,
     // which is most of what read as "not high res".
-    // The x comes from the layout pass, which nudged it away from the canvas
-    // edge if the name would otherwise be clipped. Re-deriving it from p.x here
-    // would put the text somewhere the collision boxes know nothing about.
-    const px = Math.round(n.nameX != null ? n.nameX : p.x);
+    // Clamped here, against this frame's node position, so the label travels
+    // with its own sphere while the ring turns. See arcClampX().
+    const px = Math.round(arcClampX(p.x, n.nameHalf || 0));
 
     if (n.timeRow >= 0) {
       ctx.font = `700 ${fs}px 'Space Grotesk', Inter, system-ui, sans-serif`;
       ctx.fillStyle = rgba(n.rgb, Math.min(1, op + 0.2).toFixed(3));
-      ctx.fillText(n.time, Math.round(n.timeX != null ? n.timeX : p.x),
+      ctx.fillText(n.time, Math.round(arcClampX(p.x, n.timeHalf || 0)),
                    Math.round(p.y - r - 13 - n.timeRow * (fs + 7)));
     }
 
@@ -3272,7 +3283,7 @@ function arcDraw(ts) {
       ctx.font = `600 ${fs - 1}px Inter, system-ui, sans-serif`;
       ctx.fillStyle = rgba(n.rgb, 0.92);
       ctx.fillText((n.catLabel || '').toUpperCase(),
-                   Math.round(n.catX != null ? n.catX : p.x), yName + fs + 6);
+                   Math.round(arcClampX(p.x, n.catHalf || 0)), yName + fs + 6);
     }
     ctx.shadowBlur = 0;
   });
@@ -4098,105 +4109,99 @@ function renderNotes(name, fallbackText, candidateId) {
   }
 
   if (btn) btn.textContent = (local && local.text) ? '✎ Edit note' : '✎ Add a note';
-  renderZoomRecap(name);
+  renderRecap(name);
   cancelEditNote(true);   // always leave the editor closed after a re-render
 }
 
-/* ── Zoom AI Companion recaps ─────────────────────────────────────────────
+/* ── Meeting recaps ───────────────────────────────────────────────────────
    The recap he liked, in the place he asked for it: under the notes, on the
    person it belongs to.
 
-   Matching is by name in the meeting topic, which is the only reliable link
-   Zoom gives us. A call held in a personal meeting room is titled "Shane
-   Graham's Personal Meeting Room" and names nobody, so those cannot be
-   attributed to a candidate and are deliberately not guessed at — putting the
-   wrong person's call summary on a candidate card is worse than showing none.
-   Topics like "Aneesha Kochar & Shane Graham" match cleanly. */
-const ZOOM = { list: [], loaded: false, error: null, newest: null, returned: 0,
-               bodies: {}, days: 90 };
+   The source is the Otter.ai summary email, not Zoom. Otter joins his calls as
+   a participant and mails the notes; Zoom's own AI Companion is not writing
+   them, and its API honestly reports six summaries ending on 14 January.
 
-async function loadZoomRecaps() {
+   Otter also attaches to people far better, because it names the attendees in
+   the subject — "Meeting Summary for Jeff Colby, Jacob, & Mark Call" — whereas
+   most of his Zoom calls are titled "Shane Graham's Personal Meeting Room" and
+   name nobody at all.
+
+   Matching needs both parts of a full name, in the title or the body. Otter
+   sometimes lists a first name only ("Jacob", "Mark"); a bare first name is
+   never matched on its own, because the wrong person's call summary on a
+   candidate card is worse than showing none. */
+const RECAPS = { list: [], loaded: false, error: null, days: 60 };
+
+async function loadRecaps() {
   try {
-    const data = await apiFetch(`/api/zoom/summaries?days=${ZOOM.days}`);
-    if (data && data.error) { ZOOM.error = data.hint || `Zoom error ${data.status}`; }
-    else {
-      ZOOM.list = (data && data.summaries) || [];
-      ZOOM.newest = data && data.newest;
-      ZOOM.returned = (data && data.returned) || 0;
-      ZOOM.error = null;
-    }
+    const data = await apiFetch(`/api/recaps?days=${RECAPS.days}`);
+    if (data && data.error) RECAPS.error = data.hint || `Recap error ${data.status}`;
+    else { RECAPS.list = (data && data.recaps) || []; RECAPS.error = null; }
   } catch (e) {
-    ZOOM.error = e.message;
+    RECAPS.error = e.message;
   }
-  ZOOM.loaded = true;
-  if (NOTE_EDIT.name) renderZoomRecap(NOTE_EDIT.name);
+  RECAPS.loaded = true;
+  if (NOTE_EDIT.name) renderRecap(NOTE_EDIT.name);
 }
 
-// Both name parts must appear, so "Dustin Smith" doesn't collect every Smith.
-function zoomRecapsFor(name) {
-  const parts = String(name || '').toLowerCase().split(/\s+/).filter(p => p.length > 1);
-  if (parts.length < 2) return [];
-  return ZOOM.list.filter(s => {
-    const topic = String(s.topic || '').toLowerCase();
-    return parts.every(p => topic.includes(p));
+function recapsFor(name) {
+  const parts = String(name || '').toLowerCase().split(/\s+/)
+    .map(p => p.replace(/[^a-z'-]/g, '')).filter(p => p.length > 1);
+  if (parts.length < 2) return [];       // a first name alone is not enough
+  const first = parts[0], last = parts[parts.length - 1];
+  return RECAPS.list.filter(r => {
+    // The subject line is the strong signal; the body catches a full name that
+    // the subject abbreviated to "Mark".
+    const hay = ((r.title || '') + ' \n ' + (r.text || '')).toLowerCase();
+    return hay.includes(first) && hay.includes(last);
   });
 }
 
-async function renderZoomRecap(name) {
+function renderRecap(name) {
   const box = document.getElementById('zoom-recap');
   if (!box) return;
-  const matches = zoomRecapsFor(name);
+  const matches = recapsFor(name);
   if (!matches.length) { box.classList.remove('open'); box.innerHTML = ''; return; }
 
-  const s = matches[0];                       // newest, the server sorts them
-  const when = new Date(s.start);
+  const r = matches[0];                       // newest first, as Graph ordered them
+  const when = new Date(r.received);
   const stamp = isNaN(when) ? '' : when.toLocaleDateString('en-US',
     { weekday: 'short', month: 'short', day: 'numeric' });
+
+  // The whole recap arrives with the list, so there is nothing to fetch here
+  // and no in-flight state to get wrong. The Zoom version needed a second
+  // request per recap; Otter's mail already carries the text.
+  const text = String(r.text || '').trim();
+  // One paragraph per line: the server already dropped the blank ones, so
+  // splitting on doubled newlines found a single block and the disclosure
+  // below never appeared.
+  const paras = text.split(/\n+/).map(t => t.trim()).filter(Boolean);
+  const lead = paras.slice(0, 2);
+  const rest = paras.slice(2);
+
+  const asHtml = arr => arr.map(t => `<div>${esc(t).replace(/\n/g, '<br>')}</div>`).join('');
 
   box.classList.add('open');
   box.innerHTML =
     `<div class="zoom-recap-head">
-       <span class="zoom-recap-badge">ZOOM AI RECAP</span>
+       <span class="zoom-recap-badge">MEETING RECAP</span>
        <span class="zoom-recap-when">${esc(stamp)}</span>
-       <span class="zoom-recap-topic">${esc(s.topic || '')}</span>
+       <span class="zoom-recap-topic">${esc(r.title || '')}</span>
      </div>
-     <div class="zoom-recap-body" id="zoom-recap-body">Loading the recap…</div>`;
-
-  let body = ZOOM.bodies[s.uuid];
-  if (!body) {
-    try {
-      body = await apiFetch(`/api/zoom/summary?uuid=${encodeURIComponent(s.uuid)}`);
-      ZOOM.bodies[s.uuid] = body;
-    } catch (e) {
-      body = { error: true, message: e.message };
-    }
-  }
-  // He may well have clicked elsewhere while that was in flight.
-  if (!document.getElementById('zoom-recap-body') || zoomRecapsFor(NOTE_EDIT.name)[0]?.uuid !== s.uuid) return;
-
-  const el = document.getElementById('zoom-recap-body');
-  if (!body || body.error) {
-    el.textContent = 'Couldn’t load this recap just now.';
-    return;
-  }
-  const steps = (body.nextSteps || []).filter(t => typeof t === 'string' && t.trim());
-  const details = (body.details || []).filter(d => d && d.summary);
-  el.innerHTML = esc(body.overview || 'No overview in this recap.').replace(/\n/g, '<br>') +
-    (steps.length
-      ? `<div class="zoom-recap-sub">NEXT STEPS</div><ul class="zoom-recap-steps">` +
-        steps.map(t => `<li>${esc(t)}</li>`).join('') + `</ul>`
-      : '') +
-    // Native disclosure: keyboard-reachable and screen-reader friendly without
-    // a line of script. The section summaries are the substance of the recap,
-    // but all of it at once is a wall of text on a card read at a glance.
-    (details.length
-      ? `<details class="zoom-recap-more"><summary>What was discussed` +
-        ` (${details.length} section${details.length === 1 ? '' : 's'})</summary>` +
-        details.map(d =>
-          `<div class="zoom-recap-sub">${esc(d.label || '')}</div>` +
-          `<div>${esc(d.summary).replace(/\n/g, '<br>')}</div>`).join('') +
-        `</details>`
-      : '');
+     <div class="zoom-recap-body">` +
+       (lead.length ? asHtml(lead) : 'This recap arrived without any text.') +
+       // Native disclosure: keyboard-reachable and screen-reader friendly
+       // without a line of script. The detail is the substance of the recap,
+       // but all of it at once is a wall of text on a card read at a glance.
+       (rest.length
+         ? `<details class="zoom-recap-more"><summary>Read the whole recap</summary>` +
+           asHtml(rest) + `</details>`
+         : '') +
+       (r.webLink
+         ? `<div class="zoom-recap-sub"><a class="zoom-recap-link" href="${esc(r.webLink)}"` +
+           ` target="_blank" rel="noopener">OPEN THE ORIGINAL NOTES \u2197</a></div>`
+         : '') +
+     `</div>`;
 }
 
 function startEditNote() {
@@ -4307,7 +4312,7 @@ async function loadAll() {
   // Cheap, independent extras.
   loadOverrides().then(() => { renderSchedule(); renderCard(); }).catch(() => {});
   loadLocalNotes().then(() => renderCard()).catch(() => {});
-  loadZoomRecaps().catch(() => {});
+  loadRecaps().catch(() => {});
   loadWeather().catch(() => {});
   loadNews().catch(() => {});
 
