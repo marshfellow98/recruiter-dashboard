@@ -7,7 +7,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { background: #000; min-height: 100vh; }
+  /* overflow-x on <body> alone does not stop the page panning sideways: the
+     news carousel's 4398px of inner content left the document 151px wider than
+     the window, and the viewport scrolled even though body clipped its own box.
+     The rule has to be on the root as well. Nothing here is position: sticky,
+     so clamping the root costs nothing. */
+  html, body { background: #000; min-height: 100vh; overflow-x: hidden; }
   body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; color: #fff; padding: 1.5rem; position: relative; overflow-x: hidden; }
 
   /* Aurora gradient mesh — slow-moving, contained to the edges so it never fights foreground contrast */
