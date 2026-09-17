@@ -1347,6 +1347,25 @@ server.listen(PORT, () => {
   console.log('Routes: GET /, GET /api/calendar, GET /api/calendar/tomorrow, GET /api/emails, GET /api/candidates, GET /api/calls, GET /api/zoom, POST /api/ai\n');
 });
 
+/* Warm the candidate cache at boot.
+
+   The pool takes a full crawl to build on an empty cache, and every deploy
+   starts a fresh process — so without this, the first person to open the
+   dashboard after a deploy pays for the whole crawl while looking at a
+   half-empty page. Doing it at startup moves that cost to deploy time, when
+   nobody is waiting. Failure is logged and otherwise ignored; the first real
+   request will simply try again. */
+// WARM_CANDIDATES=0 disables it — the cache-timing tests need deterministic
+// expiry, and a background refresh landing mid-test moves the goalposts.
+if (CONFIG.recruiterflow.apiKey && process.env.WARM_CANDIDATES !== '0') {
+  setTimeout(() => {
+    const t0 = Date.now();
+    getCandidates()
+      .then(list => console.log(`[warm] candidate cache ready — ${list.length} records in ${((Date.now()-t0)/1000).toFixed(1)}s`))
+      .catch(e => console.warn('[warm] candidate prefetch failed (will retry on demand):', e.message));
+  }, 1500);
+}
+
 process.on('SIGTERM', () => {
   console.log('SIGTERM received — uptime: ' + process.uptime() + 's, memory: ' + JSON.stringify(process.memoryUsage()));
   process.exit(0);
