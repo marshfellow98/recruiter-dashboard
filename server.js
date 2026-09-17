@@ -954,31 +954,52 @@ async function handleAPI(pathname, query) {
       headers: { 'Authorization': `Bearer ${token}`, 'ConsistencyLevel': 'eventual' }
     }).catch(e => ({ status: 0, body: { error: { message: e.message } } }));
 
-    /* Two shapes per sender, because this mailbox refuses the obvious one.
-       Filtering on the sender AND sorting by date is itself "too complex" here
-       — the sort is what tips it over, so the first attempt drops $orderby and
-       the ordering is done in code below, where it has to happen anyway to
-       merge the senders. If even the bare filter is refused, fall back to
-       $search, which cannot be combined with $filter but is served. (The
-       long-standing /api/emails query has the same filter-and-sort shape and
-       has been quietly falling back to search for the same reason.) */
+    /* Several shapes per sender, tried in order, because this mailbox is
+       particular about all of them and each failure looked like success.
+
+       - Sender OR'd + date + sort: 400 InefficientFilter outright.
+       - Sender + sort: also refused.
+       - Sender alone: served, and returned 40 messages — but with no $orderby
+         Graph hands back an arbitrary slice, which here was entirely old mail,
+         so the window dropped every one and the panel read as empty while the
+         query was "working".
+       - $search="from:…": served, but the quotes must be literal around an
+         encoded term, not themselves encoded.
+
+       So the date bound goes back INTO the query, because without a sort it is
+       the only thing that makes the slice recent. A shape counts as good only
+       if it returns something inside the window; otherwise the next is tried.
+       The window is still re-checked in code below regardless. */
+    const inWin = r => (r.body?.value || []).some(m => {
+      const t = Date.parse(m.receivedDateTime);
+      return Number.isFinite(t) && t >= Date.parse(since);
+    });
     const probes = [];
     const pages = await Promise.all(senders.map(async s => {
       const esc = s.replace(/'/g, "''");
-      const byFilter = await ask(
-        `$filter=${encodeURIComponent(`from/emailAddress/address eq '${esc}'`)}&${SELECT}&$top=${top}`);
-      if (byFilter.status === 200 && (byFilter.body?.value || []).length) {
-        probes.push({ s, via: 'filter', n: byFilter.body.value.length });
-        return byFilter;
+      const f = c => `$filter=${encodeURIComponent(c)}&${SELECT}&$top=${top}`;
+      const addr = `from/emailAddress/address eq '${esc}'`;
+      const shapes = [
+        // %20, not a literal space: Node's http client rejects a raw space.
+        ['filter+date+sort', f(`${addr} and receivedDateTime ge ${since}`) + '&$orderby=receivedDateTime%20desc'],
+        ['filter+date',      f(`${addr} and receivedDateTime ge ${since}`)],
+        ['filter+sort',      f(addr) + '&$orderby=receivedDateTime%20desc'],
+        ['search',           `$search="${encodeURIComponent(`from:${s}`)}"&${SELECT}&$top=${top}`],
+        ['filter',           f(addr)],
+      ];
+      let firstOk = null;
+      for (const [via, path] of shapes) {
+        const res = await ask(path);
+        const n = (res.body?.value || []).length;
+        if (res.status === 200 && !firstOk) firstOk = { via, res, n };
+        if (res.status === 200 && inWin(res)) {
+          probes.push({ s, via, n, recent: true });
+          return res;
+        }
       }
-      /* The quotes go around the ENCODED term, not through the encoder. Graph
-         wants $search="…" with literal double quotes; sending %22 made it
-         search for a token beginning with a quote character, which matched
-         nothing at all and looked exactly like an empty mailbox. */
-      const bySearch = await ask(`$search="${encodeURIComponent(`from:${s}`)}"&${SELECT}&$top=${top}`);
-      probes.push({ s, via: bySearch.status === 200 ? 'search' : 'failed',
-                    n: (bySearch.body?.value || []).length, status: bySearch.status });
-      return bySearch.status === 200 ? bySearch : byFilter;
+      if (firstOk) { probes.push({ s, via: firstOk.via, n: firstOk.n, recent: false }); return firstOk.res; }
+      probes.push({ s, via: 'failed' });
+      return { status: 0, body: {} };
     }));
 
     // One dead alias must not take the others down with it; only a clean sweep
