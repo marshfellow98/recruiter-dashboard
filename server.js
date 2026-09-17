@@ -891,7 +891,7 @@ async function handleAPI(pathname, query) {
       const filter = `from/emailAddress/address eq '${email.replace(/'/g,"''")}' or toRecipients/any(r:r/emailAddress/address eq '${email.replace(/'/g,"''")}')`;
       const res = await fetchJSON({
         hostname: 'graph.microsoft.com',
-        path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$filter=${encodeURIComponent(filter)}&$select=subject,from,receivedDateTime,bodyPreview,webLink&$orderby=receivedDateTime desc&$top=5`,
+        path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$filter=${encodeURIComponent(filter)}&$select=subject,from,receivedDateTime,bodyPreview,webLink&$orderby=receivedDateTime%20desc&$top=5`,
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -942,7 +942,10 @@ async function handleAPI(pathname, query) {
       hostname: 'graph.microsoft.com',
       path: `/v1.0/users/${process.env.MS_USER_EMAIL}/messages?$filter=${encodeURIComponent(filter)}` +
             `&$select=subject,from,receivedDateTime,bodyPreview,webLink,body` +
-            `&$orderby=receivedDateTime desc&$top=${top}`,
+            // %20, not a literal space: Node's http client throws
+            // "Request path contains unescaped characters" on a raw space in
+            // the path, which surfaced as a blanket 500 from this endpoint.
+            `&$orderby=receivedDateTime%20desc&$top=${top}`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}`, 'ConsistencyLevel': 'eventual' }
     });
