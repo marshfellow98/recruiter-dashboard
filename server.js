@@ -798,9 +798,16 @@ async function handleAPI(pathname, query) {
     const res = await zoomGet(
       `/v2/users/me/meeting_summaries?from=${iso(from)}&to=${iso(to)}&page_size=30`);
     if (res.status >= 400) {
+      // Zoom's granular scope names are not what the docs' older naming
+      // suggests: the live API asks for meeting:read:list_summaries:admin,
+      // NOT meeting_summary:read:admin. Confirmed against the real account —
+      // searching the Marketplace for "summary" does not surface it, so the
+      // hint names the exact string to search for.
       return { error: true, status: res.status, zoom: res.body,
-               hint: res.status === 400 || res.body?.code === 4711
-                 ? 'Add the meeting_summary:read:admin scope to the Zoom app, then retry with ?fresh=1'
+               hint: (res.status === 400 || res.body?.code === 4711)
+                 ? 'Zoom app is missing a scope. Add meeting:read:list_summaries:admin ' +
+                   '(and meeting:read:summary:admin for the full recap), re-activate the ' +
+                   'app, then retry with ?fresh=1'
                  : undefined };
     }
     const list = (res.body?.summaries || []).map(s => ({
