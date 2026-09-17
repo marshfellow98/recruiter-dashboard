@@ -3881,9 +3881,26 @@ function chooseSearch(i) {
 function revealMainCard() {
   const wrap = document.querySelector('.main-card-wrap');
   if (!wrap) return;
+  const targetY = () => Math.max(0, wrap.getBoundingClientRect().top + window.scrollY - 20);
+
+  /* Glide if we can, but land either way.
+
+     The native smooth scroll is animated by the same frame loop the browser
+     throttles when a tab isn't visible, so it can move a few pixels and stall —
+     measured on the live site, 21px in 1.5 seconds, and 0 with the tab hidden.
+     This page has been bitten by an rAF dependency once already (the canvases
+     used to render blank until the first frame arrived), so the arrival is
+     re-asserted shortly after, recomputing the target because the email and
+     call history landing can shift the card in the meantime. */
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const top = wrap.getBoundingClientRect().top + window.scrollY - 20;
-  window.scrollTo({ top: Math.max(0, top), behavior: reduced ? 'auto' : 'smooth' });
+  const smooth = !reduced && !document.hidden;
+  window.scrollTo({ top: targetY(), behavior: smooth ? 'smooth' : 'auto' });
+  clearTimeout(revealMainCard.land);
+  revealMainCard.land = setTimeout(() => {
+    const t = targetY();
+    if (Math.abs(window.scrollY - t) > 24) window.scrollTo({ top: t, behavior: 'auto' });
+  }, smooth ? 620 : 120);
+
   wrap.classList.remove('card-arrive');
   void wrap.offsetWidth;                       // restart the animation
   wrap.classList.add('card-arrive');
