@@ -24,7 +24,7 @@ const CONFIG = {
 
 const tokens = { ms: null, zoom: null, rc: null, msExpiry: null };
 const callsCache = { data: null, expiry: 0 };
-const candidatesCache = { data: null, expiry: 0 };
+const candidatesCache = { data: null, expiry: 0, ids: null, lastFull: 0 };
 const contactsCache = { data: null, expiry: 0 };
 
 // ── Manual label overrides ─────────────────────────────────
@@ -47,6 +47,55 @@ function loadOverrides() {
 
 function saveOverrides(overrides) {
   fs.writeFileSync(OVERRIDES_FILE, JSON.stringify(overrides, null, 2));
+}
+
+// ── Candidate notes, written from the dashboard ────────────────────────────
+// Notes are stored in BOTH places, and the local copy is the one the dashboard
+// reads back. That is not belt-and-braces, it is necessary: RecruiterFlow's
+// candidate/list endpoint does not return a `notes` field at all, so a note
+// pushed only to RecruiterFlow would vanish from this dashboard on the next
+// refresh — you would type it and watch it disappear.
+//
+// The RecruiterFlow push is therefore best-effort and its result is reported
+// back to the UI rather than swallowed, so a failure to reach the CRM is
+// visible instead of being mistaken for a successful save.
+const NOTES_FILE = path.join(__dirname, 'notes.json');
+
+function loadNotes() {
+  try {
+    return JSON.parse(fs.readFileSync(NOTES_FILE, 'utf8'));
+  } catch (e) {
+    return {}; // not written yet, or unreadable — start fresh
+  }
+}
+
+function saveNotes(notes) {
+  // Write to a temp file and rename, so an interrupted write can't leave a
+  // truncated notes.json behind and lose everything he has typed.
+  const tmp = NOTES_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(notes, null, 2));
+  fs.renameSync(tmp, NOTES_FILE);
+}
+
+async function pushNoteToRecruiterFlow(id, text) {
+  if (!id) return { attempted: false, reason: 'no RecruiterFlow id on this record' };
+  if (!CONFIG.recruiterflow.apiKey) return { attempted: false, reason: 'no API key configured' };
+  const payload = JSON.stringify({ id: Number(id) || id, notes: [text] });
+  try {
+    const res = await fetchJSON({
+      hostname: 'recruiterflow.com',
+      path: '/api/external/candidate/update',
+      method: 'POST',
+      headers: {
+        'rf-api-key': CONFIG.recruiterflow.apiKey,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    }, payload);
+    return { attempted: true, ok: res.status >= 200 && res.status < 300, status: res.status, body: res.body };
+  } catch (e) {
+    return { attempted: true, ok: false, error: e.message };
+  }
 }
 
 function fetchJSON(options, body) {
@@ -98,8 +147,16 @@ async function getMSToken() {
   return tokens.ms;
 }
 
+// Zoom server-to-server tokens expire after an hour. This used to cache the
+// token forever — `if (tokens.zoom) return tokens.zoom` with nothing to expire
+// it — so every Zoom call failed permanently one hour after a deploy until the
+// process happened to restart. It also meant a scope added in the Zoom
+// Marketplace never took effect on a running instance, because the old
+// scope-less token was still being handed out.
 async function getZoomToken() {
-  if (tokens.zoom) return tokens.zoom;
+  if (tokens.zoom && tokens.zoomExpiry && Date.now() < tokens.zoomExpiry) {
+    return tokens.zoom;
+  }
   const creds = Buffer.from(`${CONFIG.zoom.clientId}:${CONFIG.zoom.clientSecret}`).toString('base64');
   const res = await fetchJSON({
     hostname: 'zoom.us',
@@ -107,8 +164,38 @@ async function getZoomToken() {
     method: 'POST',
     headers: { 'Authorization': `Basic ${creds}`, 'Content-Length': 0 }
   }, '');
+  if (!res.body?.access_token) {
+    throw new Error(`Zoom token request failed: ${res.status} ${JSON.stringify(res.body).slice(0, 200)}`);
+  }
   tokens.zoom = res.body.access_token;
+  // Refresh a minute early rather than racing the expiry.
+  const ttl = Number(res.body.expires_in || 3600);
+  tokens.zoomExpiry = Date.now() + Math.max(60, ttl - 60) * 1000;
   return tokens.zoom;
+}
+
+// Discards the cached token so the next call re-authenticates. Used after a
+// scope change, so a new scope can be picked up without redeploying.
+function resetZoomToken() {
+  tokens.zoom = null;
+  tokens.zoomExpiry = null;
+}
+
+async function zoomGet(path) {
+  const token = await getZoomToken();
+  const res = await fetchJSON({
+    hostname: 'api.zoom.us', path, method: 'GET',
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  return res;
+}
+
+// Zoom meeting UUIDs are base64 and can contain '/' or begin with one. Those
+// must be double URL-encoded or the path breaks. This is the single most common
+// way Zoom meeting lookups fail, so it lives in one place.
+function encodeMeetingUuid(uuid) {
+  const once = encodeURIComponent(uuid);
+  return (uuid.startsWith('/') || uuid.includes('//')) ? encodeURIComponent(once) : once;
 }
 
 async function getRCToken() {
@@ -137,6 +224,265 @@ async function getRCToken() {
   }
   return tokens.rc;
   return tokens.rc;
+}
+
+// ── Candidate list: incremental sync ──────────────────────────────────────
+// The old loader re-crawled the entire candidate list — 201 sequential
+// RecruiterFlow calls, ~40 seconds — every time the 20-minute cache lapsed.
+// It also capped at 200 pages (20,000 records) and the list had already
+// reached 20,029, so the oldest candidates were silently invisible.
+//
+// The fix leans on a property of the API: /candidate/list returns records
+// strictly newest-first (verified across 20,028 consecutive pairs, zero out
+// of order). So a refresh only has to page until it meets a record it already
+// holds, then stop. In practice that is a single call instead of 201.
+//
+// Two caveats, handled below. Sorting is by date added, so an EDIT to an
+// existing candidate does not float it to the top and a top-up won't see it;
+// a deletion won't be noticed either. Both are caught by forcing a full
+// re-crawl once a day.
+const RF_PAGE_SIZE = 100;
+const RF_MAX_PAGES = 600;              // ceiling raised: the pool had already hit the old 200
+// Overridable so the sync can be exercised without waiting out real timers.
+const CAND_TTL = Number(process.env.CAND_TTL_MS || 20 * 60000);        // serve from memory
+const CAND_FULL_TTL = Number(process.env.CAND_FULL_TTL_MS || 24 * 3600000); // full re-crawl interval
+let candidatesInFlight = null;         // collapses concurrent requests into one fetch
+
+async function fetchCandidatePage(page) {
+  const res = await fetchJSON({
+    hostname: 'recruiterflow.com',
+    path: `/api/external/candidate/list?current_page=${page}&items_per_page=${RF_PAGE_SIZE}`,
+    method: 'GET',
+    headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
+  });
+  return Array.isArray(res.body) ? res.body : (res.body?.data || []);
+}
+
+const candidateId = c => c.id ?? c.prospect_id ?? null;
+
+// RecruiterFlow sometimes stuffs credentials or titles into last_name
+// (e.g. "Soto M.A., Insurance Agent"). Same normalisation the client uses, kept
+// here so server-side lookups and client-side matching can't drift apart.
+function rfCleanLastName(s) {
+  return (s || '').split(',')[0].replace(/\b([A-Z]\.){1,3}[A-Z]?\.?\b/g, '').trim();
+}
+function rfFullName(c) {
+  return `${c.first_name || ''} ${rfCleanLastName(c.last_name)}`.trim();
+}
+
+function buildNameIndex(list) {
+  const byFull = new Map(), byFirst = new Map();
+  for (const c of list) {
+    const full = rfFullName(c).toLowerCase();
+    if (!full) continue;
+    if (!byFull.has(full)) byFull.set(full, c);
+    const first = full.split(' ')[0];
+    if (!first) continue;
+    if (!byFirst.has(first)) byFirst.set(first, []);
+    byFirst.get(first).push(c);
+  }
+  return { byFull, byFirst };
+}
+
+function setCandidateCache(list, isFull) {
+  const now = Date.now();
+  candidatesCache.data = list;
+  candidatesCache.ids = new Set(list.map(candidateId).filter(v => v !== null));
+  candidatesCache.index = buildNameIndex(list);
+  candidatesCache.expiry = now + CAND_TTL;
+  if (isFull) candidatesCache.lastFull = now;
+}
+
+// ── Geocoding, from the baked gazetteer ───────────────────────────────────
+// RecruiterFlow stores a city and a full state name but no coordinates. The
+// gazetteer is read once into memory here and never sent to the browser — the
+// client only needs coordinates for the handful of people on screen, which
+// ride along on the lookup response for about 20 bytes each.
+let GAZETTEER = null;
+// Checked in both places so the file works whether it is committed under geo/
+// or dropped at the repo root — GitHub's web uploader flattens directories, so
+// insisting on one location would make this undeployable without a terminal.
+const GAZETTEER_PATHS = [
+  path.join(__dirname, 'geo', 'us-cities.json'),
+  path.join(__dirname, 'us-cities.json')
+];
+function gazetteer() {
+  if (GAZETTEER) return GAZETTEER;
+  for (const p of GAZETTEER_PATHS) {
+    try {
+      GAZETTEER = JSON.parse(fs.readFileSync(p, 'utf8'));
+      console.log(`[geo] gazetteer loaded from ${p} — ${Object.keys(GAZETTEER.cities).length} cities`);
+      return GAZETTEER;
+    } catch (e) { /* try the next location */ }
+  }
+  // The map degrades to "no location on file" rather than taking the page down.
+  console.warn('[geo] gazetteer not found in', GAZETTEER_PATHS.join(' or '), '— map will be empty');
+  GAZETTEER = { cities: {}, stateCentroids: {}, stateCodes: {} };
+  return GAZETTEER;
+}
+
+// Returns coordinates plus how precise they are, so the map can distinguish a
+// real city pin from a whole-state approximation instead of implying accuracy
+// it doesn't have.
+function geoForCandidate(c) {
+  const L = (c.location && typeof c.location === 'object') ? c.location : {};
+  const g = gazetteer();
+  const raw = String(L.state || '').trim();
+  const code = raw.length === 2 ? raw.toUpperCase() : (g.stateCodes[raw] || null);
+  const city = String(L.city || '').trim();
+
+  if (city && code) {
+    const hit = g.cities[city.toLowerCase() + '|' + code];
+    if (hit) return { lat: hit[0], lon: hit[1], city, state: code, precision: 'city' };
+  }
+  if (code && g.stateCentroids[code]) {
+    const ct = g.stateCentroids[code];
+    return { lat: ct[0], lon: ct[1], city, state: code, precision: 'state' };
+  }
+  return null;
+}
+
+// Resolve meeting attendee names to candidate records. Returns only the
+// matches, keyed by the name asked for — the dashboard used to download all
+// 20,000 records (29MB) to find the four it needed.
+function lookupCandidates(names) {
+  const idx = candidatesCache.index;
+  const out = {};
+  if (!idx) return out;
+
+  for (const raw of names) {
+    const q = (raw || '').trim();
+    if (!q) continue;
+    const lower = q.toLowerCase();
+
+    let hit = idx.byFull.get(lower);
+    if (!hit) {
+      const parts = lower.split(/\s+/).filter(Boolean);
+      const sameFirst = idx.byFirst.get(parts[0]) || [];
+      if (parts.length === 1) {
+        // Only accept a first-name-only match when it is unambiguous.
+        if (sameFirst.length === 1) hit = sameFirst[0];
+      } else {
+        const last = parts[parts.length - 1];
+        const narrowed = sameFirst.filter(c =>
+          rfCleanLastName(c.last_name).toLowerCase().startsWith(last[0]));
+        if (narrowed.length === 1) hit = narrowed[0];
+        else if (sameFirst.length === 1) hit = sameFirst[0];
+      }
+    }
+    if (hit) out[q] = { ...hit, _geo: geoForCandidate(hit) };
+  }
+  return out;
+}
+
+// Free-text search across the server-side pool, so he can find someone without
+// switching to RecruiterFlow. Ranked: name matches beat company and title.
+function searchCandidates(q, limit = 25) {
+  const list = candidatesCache.data || [];
+  const needle = String(q || '').trim().toLowerCase();
+  if (needle.length < 2) return [];
+
+  const scored = [];
+  for (const c of list) {
+    const name = rfFullName(c).toLowerCase();
+    const org = String(c.current_organization || '').toLowerCase();
+    const title = String(c.current_designation || '').toLowerCase();
+    const city = String(c.location?.city || '').toLowerCase();
+
+    let score = 0;
+    if (name === needle) score = 100;
+    else if (name.startsWith(needle)) score = 80;
+    else if (name.includes(needle)) score = 60;
+    else if (org.includes(needle)) score = 40;
+    else if (title.includes(needle)) score = 25;
+    else if (city.includes(needle)) score = 15;
+    if (!score) continue;
+
+    // Nudge anyone with real recent activity above the bulk-imported pool.
+    if (c.last_contacted) score += 6;
+    scored.push({ score, c });
+    if (scored.length > 4000) break;   // plenty to rank from; keeps this bounded
+  }
+
+  scored.sort((a, b) => b.score - a.score ||
+    String(b.c.latest_activity_time || '').localeCompare(String(a.c.latest_activity_time || '')));
+  return scored.slice(0, limit).map(s => s.c);
+}
+
+async function crawlAllCandidates() {
+  let all = [];
+  let page = 1;
+  while (page <= RF_MAX_PAGES) {
+    const pageData = await fetchCandidatePage(page);
+    if (!pageData.length) break;
+    all = all.concat(pageData);
+    if (pageData.length < RF_PAGE_SIZE) break;
+    page++;
+  }
+  if (page > RF_MAX_PAGES) {
+    console.warn(`[candidates] hit the ${RF_MAX_PAGES}-page ceiling (${all.length} records). ` +
+                 `Some candidates are NOT loaded — raise RF_MAX_PAGES.`);
+  }
+  return all;
+}
+
+// Pages from the top and stops at the first record already in cache.
+async function topUpCandidates() {
+  const known = candidatesCache.ids;
+  const fresh = [];
+  let page = 1;
+  let reachedKnown = false;
+  while (page <= RF_MAX_PAGES && !reachedKnown) {
+    const pageData = await fetchCandidatePage(page);
+    if (!pageData.length) break;
+    for (const c of pageData) {
+      const id = candidateId(c);
+      if (id !== null && known.has(id)) { reachedKnown = true; break; }
+      fresh.push(c);
+    }
+    if (reachedKnown || pageData.length < RF_PAGE_SIZE) break;
+    page++;
+  }
+  return { fresh, pages: page, reachedKnown };
+}
+
+async function getCandidates() {
+  if (candidatesInFlight) return candidatesInFlight;          // already fetching; join it
+
+  const now = Date.now();
+  if (candidatesCache.data && now < candidatesCache.expiry) return candidatesCache.data;
+
+  candidatesInFlight = (async () => {
+    const stale = !candidatesCache.data || (now - candidatesCache.lastFull) > CAND_FULL_TTL;
+    if (stale) {
+      const all = await crawlAllCandidates();
+      setCandidateCache(all, true);
+      console.log(`[candidates] full crawl — ${all.length} records`);
+      return all;
+    }
+
+    const { fresh, pages, reachedKnown } = await topUpCandidates();
+    // If we paged out without ever meeting a known record something is off
+    // (a re-sort, or a very large gap); fall back to a full crawl rather than
+    // quietly serving a list with a hole in it.
+    if (!reachedKnown && fresh.length >= RF_PAGE_SIZE) {
+      const all = await crawlAllCandidates();
+      setCandidateCache(all, true);
+      console.log(`[candidates] top-up overran, re-crawled — ${all.length} records`);
+      return all;
+    }
+
+    const merged = fresh.length ? fresh.concat(candidatesCache.data) : candidatesCache.data;
+    setCandidateCache(merged, false);
+    console.log(`[candidates] top-up — +${fresh.length} new in ${pages} call(s), ${merged.length} total`);
+    return merged;
+  })();
+
+  try {
+    return await candidatesInFlight;
+  } finally {
+    candidatesInFlight = null;
+  }
 }
 
 async function handleAPI(pathname, query) {
@@ -359,34 +705,29 @@ async function handleAPI(pathname, query) {
     return res2.body;
   }
 
+  // Resolve only the attendees on the schedule. Replaces the old behaviour of
+  // shipping the entire 20,000-record pool (29MB) to the browser per load.
+  if (pathname === '/api/candidates/lookup') {
+    const names = String(query.names || '').split('|').map(s => s.trim()).filter(Boolean);
+    if (!names.length) return {};
+    await getCandidates();
+    const found = lookupCandidates(names);
+    console.log(`[lookup] ${Object.keys(found).length}/${names.length} matched`);
+    return found;
+  }
+
+  if (pathname === '/api/candidates/search') {
+    await getCandidates();
+    const hits = searchCandidates(query.q, Math.min(Number(query.limit) || 25, 50));
+    return { query: query.q || '', count: hits.length, results: hits };
+  }
+
   if (pathname === '/api/candidates') {
-    // Shane has ~15,000 candidates — pulling all of them via ~150 sequential paginated
-    // requests is too slow to do on every single page load. Cache the full result for
-    // 20 minutes so repeat dashboard opens/refreshes reuse it instantly; only the first
-    // load in each 20-minute window pays the full fetch cost.
-    if (candidatesCache.data && Date.now() < candidatesCache.expiry) {
-      return candidatesCache.data;
-    }
-    let allCandidates = [];
-    let page = 1;
-    const maxPages = 200; // safety cap — 200 pages × 100 = up to 20,000 candidates (headroom above his ~15,000)
-    while (page <= maxPages) {
-      const res = await fetchJSON({
-        hostname: 'recruiterflow.com',
-        path: `/api/external/candidate/list?current_page=${page}&items_per_page=100`,
-        method: 'GET',
-        headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
-      });
-      const pageData = Array.isArray(res.body) ? res.body : (res.body?.data || []);
-      if (!pageData.length) break; // no more pages
-      allCandidates = allCandidates.concat(pageData);
-      if (pageData.length < 100) break; // last page was partial, we're done
-      page++;
-    }
-    console.log(`Fetched ${allCandidates.length} total candidates across ${page} page(s)`);
-    candidatesCache.data = allCandidates;
-    candidatesCache.expiry = Date.now() + 20 * 60000; // 20 minutes
-    return allCandidates;
+    // Full crawl on first load or once a day; a single top-up call otherwise.
+    // See the incremental sync block above handleAPI().
+    // Kept for debugging and backwards compatibility — the dashboard itself
+    // now uses /lookup and /search rather than pulling the whole pool.
+    return getCandidates();
   }
 
   if (pathname === '/api/contacts') {
@@ -438,14 +779,54 @@ async function handleAPI(pathname, query) {
   }
 
   if (pathname === '/api/zoom') {
-    const token = await getZoomToken();
-    const res = await fetchJSON({
-      hostname: 'api.zoom.us',
-      path: '/v2/users/me/meetings?type=scheduled&page_size=10',
-      method: 'GET',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+    if (query.fresh) resetZoomToken();   // pick up a newly added scope without redeploying
+    const res = await zoomGet('/v2/users/me/meetings?type=scheduled&page_size=10');
     return res.body;
+  }
+
+  // ── Zoom AI Companion recaps ───────────────────────────────────────────
+  // Lists meetings from the last N days that have an AI summary. Needs the
+  // meeting_summary:read:admin scope on the server-to-server OAuth app; if it
+  // is missing, Zoom answers 400/4711 and that is surfaced as-is rather than
+  // swallowed, so the cause is obvious from the dashboard.
+  if (pathname === '/api/zoom/summaries') {
+    if (query.fresh) resetZoomToken();
+    const days = Math.min(Math.max(Number(query.days) || 14, 1), 90);
+    const iso = d => d.toISOString().slice(0, 10);
+    const to = new Date();
+    const from = new Date(to.getTime() - days * 86400000);
+    const res = await zoomGet(
+      `/v2/users/me/meeting_summaries?from=${iso(from)}&to=${iso(to)}&page_size=30`);
+    if (res.status >= 400) {
+      return { error: true, status: res.status, zoom: res.body,
+               hint: res.status === 400 || res.body?.code === 4711
+                 ? 'Add the meeting_summary:read:admin scope to the Zoom app, then retry with ?fresh=1'
+                 : undefined };
+    }
+    const list = (res.body?.summaries || []).map(s => ({
+      uuid: s.meeting_uuid,
+      meetingId: s.meeting_id,
+      topic: s.meeting_topic,
+      start: s.meeting_start_time,
+      end: s.meeting_end_time,
+      host: s.meeting_host_email
+    }));
+    return { count: list.length, from: iso(from), to: iso(to), summaries: list };
+  }
+
+  // The full recap for one meeting: overview, section details and next steps.
+  if (pathname === '/api/zoom/summary') {
+    if (!query.uuid) return { error: true, message: 'uuid is required' };
+    const res = await zoomGet(`/v2/meetings/${encodeMeetingUuid(query.uuid)}/meeting_summary`);
+    if (res.status >= 400) return { error: true, status: res.status, zoom: res.body };
+    const b = res.body || {};
+    return {
+      topic: b.meeting_topic,
+      start: b.meeting_start_time,
+      overview: b.summary_overview || '',
+      details: (b.summary_details || []).map(d => ({ label: d.label, summary: d.summary })),
+      nextSteps: b.next_steps || []
+    };
   }
 
   if (pathname === '/api/debug/news') {
@@ -642,6 +1023,47 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: true, overrides }));
     } catch(e) {
       console.error('Overrides save error:', e.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  if (pathname === '/api/notes' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(loadNotes()));
+    return;
+  }
+
+  if (pathname === '/api/notes' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const name = String(body.name || '').trim();
+      const text = String(body.text == null ? '' : body.text);
+      const id = body.id || null;
+      if (!name) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'name is required' }));
+        return;
+      }
+
+      // Local write first, and it decides success. If RecruiterFlow is down,
+      // his note is still saved rather than lost to a failed round trip.
+      const notes = loadNotes();
+      if (text.trim()) {
+        notes[name] = { text, id, updated: new Date().toISOString() };
+      } else {
+        delete notes[name]; // clearing the box removes the note
+      }
+      saveNotes(notes);
+
+      const rf = text.trim() ? await pushNoteToRecruiterFlow(id, text) : { attempted: false, reason: 'note cleared' };
+      console.log(`[notes] saved "${name}" locally; RecruiterFlow: ${rf.attempted ? (rf.ok ? 'ok' : 'failed ' + (rf.status || rf.error)) : 'skipped — ' + rf.reason}`);
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, saved: notes[name] || null, recruiterflow: rf }));
+    } catch (e) {
+      console.error('Notes save error:', e.message);
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: e.message }));
     }
