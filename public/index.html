@@ -725,6 +725,17 @@
   .tag-viewing { background: rgba(138,92,255,0.22); color: #d9ccff; border: 1px solid rgba(138,92,255,0.45); }
   .main-card.viewing-mode { border-color: transparent; box-shadow: var(--e2), 0 0 0 1px rgba(138,92,255,0.28); }
 
+  /* The card announcing itself after a search pick — see revealMainCard(). */
+  @keyframes cardArrive {
+    0%   { box-shadow: 0 0 0 0 rgba(138,92,255,0.00); }
+    22%  { box-shadow: 0 0 0 3px rgba(138,92,255,0.85), 0 0 40px 8px rgba(138,92,255,0.30); }
+    100% { box-shadow: 0 0 0 0 rgba(138,92,255,0.00); }
+  }
+  .main-card-wrap.card-arrive { animation: cardArrive 1.5s ease-out; }
+  @media (prefers-reduced-motion: reduce) {
+    .main-card-wrap.card-arrive { animation: none; }
+  }
+
   @media (max-width: 1100px) {
     .search-input { width: 220px; }
     .search-input:focus { width: 260px; }
@@ -3855,11 +3866,37 @@ function chooseSearch(i) {
   viewCandidate(rec);
 }
 
+/* Bring the card he just asked for into view.
+
+   Opening someone from search changed nothing he could see. The card swapped
+   correctly — name, contact buttons, notes, email and call history, all of it —
+   but the main card starts about a screen and a half down the page, so from
+   where he was sitting the results panel closed and the page looked identical.
+   The feature was complete and invisible.
+
+   So: scroll the card to him, and flash its edge, so the jump reads as the
+   answer to his click rather than the page wandering off on its own. The flash
+   sits on the wrapper because renderCard() rewrites the card's own class list
+   when the email and call history land a moment later. */
+function revealMainCard() {
+  const wrap = document.querySelector('.main-card-wrap');
+  if (!wrap) return;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const top = wrap.getBoundingClientRect().top + window.scrollY - 20;
+  window.scrollTo({ top: Math.max(0, top), behavior: reduced ? 'auto' : 'smooth' });
+  wrap.classList.remove('card-arrive');
+  void wrap.offsetWidth;                       // restart the animation
+  wrap.classList.add('card-arrive');
+  clearTimeout(revealMainCard.t);
+  revealMainCard.t = setTimeout(() => wrap.classList.remove('card-arrive'), 1600);
+}
+
 // ── Viewing a searched candidate ─────────────────────────────────────────
 function viewCandidate(rec) {
   if (!rec) return;
   state.viewing = rec;
   renderCard();
+  revealMainCard();
   // Their history is worth having here — "when did we last speak" is most of
   // the reason to look someone up in the first place.
   Promise.all([loadEmails(rec.name), loadCalls(rec.name)])
