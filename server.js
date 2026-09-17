@@ -3,6 +3,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
+const crypto = require('crypto');
 
 const CONFIG = {
   recruiterflow: { apiKey: process.env.RECRUITERFLOW_API_KEY },
@@ -21,6 +22,167 @@ const CONFIG = {
     clientSecret: process.env.RC_CLIENT_SECRET_NEW || process.env.RC_CLIENT_SECRET
   }
 };
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ACCESS CONTROL
+   Before this, the dashboard and every API route were open to anyone with the
+   URL — /api/candidates returned all 20,000 candidate records, with names,
+   email addresses and phone numbers, to an unauthenticated request. The page
+   was never the exposure; the API was.
+
+   One shared passcode, set as an environment variable so it is never in this
+   repository (which is public). The session cookie is an HMAC of its own
+   expiry, so it can't be forged without the secret, and it lasts 90 days —
+   this is a dashboard someone opens first thing every morning, and an auth
+   scheme that logs him out unpredictably would just get worked around.
+
+   Fails CLOSED: with no passcode configured, nothing is served except a page
+   explaining what to set. An auth layer that silently does nothing when
+   misconfigured is worse than none, because you'd believe you were covered.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const PASSCODE = process.env.DASHBOARD_PASSCODE || '';
+// Separate secret is optional; derived from the passcode otherwise. Changing
+// either one invalidates every existing session, which is the desired
+// behaviour if the passcode ever has to be rotated.
+const SESSION_SECRET = process.env.SESSION_SECRET || (PASSCODE ? 'v1:' + PASSCODE : '');
+const SESSION_COOKIE = 'rd_session';
+const SESSION_DAYS = 90;
+
+// Constant-time string compare that doesn't leak length through an exception.
+function safeEqual(a, b) {
+  const ba = Buffer.from(String(a), 'utf8');
+  const bb = Buffer.from(String(b), 'utf8');
+  if (ba.length !== bb.length) {
+    // Still do a comparison so timing doesn't reveal that lengths differed.
+    crypto.timingSafeEqual(ba, ba);
+    return false;
+  }
+  return crypto.timingSafeEqual(ba, bb);
+}
+
+function signPayload(p) {
+  return crypto.createHmac('sha256', SESSION_SECRET).update(p).digest('base64url');
+}
+
+function issueSessionToken() {
+  const payload = String(Date.now() + SESSION_DAYS * 86400000);
+  return payload + '.' + signPayload(payload);
+}
+
+function sessionTokenValid(token) {
+  if (!token || !SESSION_SECRET) return false;
+  const dot = token.lastIndexOf('.');
+  if (dot < 1) return false;
+  const payload = token.slice(0, dot);
+  const sig = token.slice(dot + 1);
+  if (!safeEqual(sig, signPayload(payload))) return false;
+  const exp = Number(payload);
+  return Number.isFinite(exp) && exp > Date.now();
+}
+
+function parseCookies(header) {
+  const out = {};
+  for (const part of String(header || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i < 1) continue;
+    out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+
+function isAuthed(req) {
+  return sessionTokenValid(parseCookies(req.headers.cookie)[SESSION_COOKIE]);
+}
+
+// Simple in-memory throttle. Enough to make guessing a shared passcode
+// impractical; this is a two-person dashboard, not a login service.
+const loginAttempts = new Map();
+const LOGIN_MAX = 10;
+const LOGIN_WINDOW = 15 * 60000;
+
+function loginBlocked(ip) {
+  const rec = loginAttempts.get(ip);
+  if (!rec) return false;
+  if (Date.now() > rec.resetAt) { loginAttempts.delete(ip); return false; }
+  return rec.count >= LOGIN_MAX;
+}
+
+function noteFailedLogin(ip) {
+  const rec = loginAttempts.get(ip);
+  if (!rec || Date.now() > rec.resetAt) {
+    loginAttempts.set(ip, { count: 1, resetAt: Date.now() + LOGIN_WINDOW });
+  } else {
+    rec.count++;
+  }
+}
+
+function clientIp(req) {
+  return String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
+         req.socket.remoteAddress || 'unknown';
+}
+
+function loginPage({ error, needsSetup } = {}) {
+  const body = needsSetup
+    ? `<h1>Set a passcode</h1>
+       <p class="msg">This dashboard has no passcode configured, so it is serving nothing.</p>
+       <ol class="steps">
+         <li>Open the service in Render and go to <b>Environment</b>.</li>
+         <li>Add a variable named <code>DASHBOARD_PASSCODE</code>, set to whatever you want the passcode to be.</li>
+         <li>Save. Render restarts automatically, then this page becomes the login.</li>
+       </ol>
+       <p class="foot">Pick something you and your dad can both remember. It is never stored in the code.</p>`
+    : `<h1>MGMTGlobal</h1>
+       <p class="msg">Enter the dashboard passcode.</p>
+       <form method="POST" action="/api/login">
+         <input type="password" name="passcode" autocomplete="current-password"
+                autofocus placeholder="Passcode" aria-label="Passcode">
+         <label class="stay"><input type="checkbox" name="remember" value="1" checked> Keep me signed in on this device</label>
+         <button type="submit">Sign in</button>
+       </form>
+       ${error ? `<p class="err">${error}</p>` : ''}`;
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign in · Recruitment Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#000;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;color:#f6f8fb;padding:24px;position:relative;overflow:hidden}
+  body::after{content:'';position:fixed;inset:-10%;z-index:0;pointer-events:none;
+    background:radial-gradient(circle at 20% 25%,rgba(0,208,132,.14) 0,transparent 34%),
+               radial-gradient(circle at 80% 20%,rgba(138,92,255,.12) 0,transparent 32%),
+               radial-gradient(circle at 70% 85%,rgba(0,208,132,.10) 0,transparent 36%);
+    filter:blur(70px)}
+  .card{position:relative;z-index:1;width:100%;max-width:440px;padding:44px 40px;border-radius:26px;
+    background-color:rgba(13,15,19,.82);
+    background-image:linear-gradient(157deg,rgba(255,255,255,.06),rgba(255,255,255,.01));
+    -webkit-backdrop-filter:blur(26px) saturate(165%);backdrop-filter:blur(26px) saturate(165%);
+    box-shadow:0 6px 18px rgba(0,0,0,.62),0 30px 70px rgba(0,0,0,.52)}
+  .card::before{content:'';position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;
+    background:linear-gradient(147deg,rgba(255,255,255,.42),rgba(255,255,255,.1) 22%,rgba(255,255,255,.02) 46%,rgba(255,255,255,.15));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;
+    mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude}
+  h1{font-family:'Space Grotesk','Inter',sans-serif;font-size:26px;font-weight:700;letter-spacing:.04em;margin-bottom:8px}
+  .msg{font-size:16px;color:#a8b2bf;line-height:1.6;margin-bottom:26px}
+  input[type=password]{width:100%;padding:16px 18px;font-family:'Inter',sans-serif;font-size:18px;color:#f6f8fb;
+    background:rgba(8,9,12,.9);border:1px solid rgba(255,255,255,.16);border-radius:14px}
+  input[type=password]:focus{outline:none;border-color:rgba(0,208,132,.6);box-shadow:0 0 0 4px rgba(0,208,132,.13)}
+  input[type=password]::placeholder{color:#8b95a3}
+  .stay{display:flex;align-items:center;gap:10px;font-size:15px;color:#a8b2bf;margin:18px 0 22px;cursor:pointer}
+  .stay input{width:18px;height:18px;accent-color:#00d084}
+  button{width:100%;padding:15px;font-family:'Inter',sans-serif;font-size:16px;font-weight:600;color:#06231a;
+    background:linear-gradient(135deg,#00e896,#00b873);border:none;border-radius:14px;cursor:pointer;
+    transition:transform .25s cubic-bezier(.22,1,.36,1),filter .25s}
+  button:hover{transform:translateY(-2px);filter:brightness(1.07)}
+  .err{margin-top:18px;padding:12px 14px;border-radius:12px;font-size:15px;color:#ffb3ae;
+    background:rgba(255,69,58,.12);border:1px solid rgba(255,69,58,.4)}
+  .steps{margin:0 0 20px 20px;font-size:16px;color:#c3ccd8;line-height:1.85}
+  code{font-family:ui-monospace,Menlo,monospace;font-size:14px;background:rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:2px 7px;color:#f6f8fb}
+  .foot{font-size:14px;color:#8b95a3;line-height:1.6}
+</style></head><body><div class="card">${body}</div></body></html>`;
+}
 
 const tokens = { ms: null, zoom: null, rc: null, msExpiry: null };
 const callsCache = { data: null, expiry: 0 };
@@ -962,6 +1124,86 @@ const server = http.createServer(async (req, res) => {
   const query = parsed.query;
 
   console.log(`${req.method} ${pathname}`);
+
+  // ── Auth gate ──────────────────────────────────────────────────────────
+  // Everything is behind this except the login endpoint itself. /api/* answers
+  // 401 JSON so the dashboard's own fetches fail cleanly; everything else gets
+  // the login page.
+  if (!PASSCODE) {
+    // Fail closed. No passcode configured means nothing is served.
+    res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(loginPage({ needsSetup: true }));
+    return;
+  }
+
+  if (pathname === '/api/login' && req.method === 'POST') {
+    const ip = clientIp(req);
+    if (loginBlocked(ip)) {
+      res.writeHead(429, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(loginPage({ error: 'Too many attempts. Wait 15 minutes and try again.' }));
+      return;
+    }
+    let raw = '';
+    req.on('data', c => raw += c);
+    await new Promise(r => req.on('end', r));
+
+    // Accepts the HTML form post and a JSON body, so the page works with or
+    // without JavaScript.
+    let given = '', remember = true;
+    if ((req.headers['content-type'] || '').includes('application/json')) {
+      try { const j = JSON.parse(raw); given = j.passcode || ''; remember = j.remember !== false; }
+      catch (e) { given = ''; }
+    } else {
+      const p = new url.URLSearchParams(raw);
+      given = p.get('passcode') || '';
+      remember = p.get('remember') === '1';
+    }
+
+    if (!safeEqual(given, PASSCODE)) {
+      noteFailedLogin(ip);
+      console.warn(`[auth] failed login from ${ip}`);
+      res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(loginPage({ error: 'That passcode is not right.' }));
+      return;
+    }
+
+    loginAttempts.delete(ip);
+    // Secure only when the request actually arrived over HTTPS. Render
+    // terminates TLS and forwards x-forwarded-proto, so production gets the
+    // flag; a plain-HTTP localhost run would otherwise have the browser throw
+    // the cookie away and loop back to the login page forever.
+    const overHttps = String(req.headers['x-forwarded-proto'] || '').includes('https');
+    const cookie = [
+      `${SESSION_COOKIE}=${issueSessionToken()}`,
+      'Path=/', 'HttpOnly', 'SameSite=Lax',
+      overHttps ? 'Secure' : '',
+      remember ? `Max-Age=${SESSION_DAYS * 86400}` : ''
+    ].filter(Boolean).join('; ');
+    console.log(`[auth] login ok from ${ip}`);
+    res.writeHead(302, { 'Set-Cookie': cookie, 'Location': '/', 'Cache-Control': 'no-store' });
+    res.end();
+    return;
+  }
+
+  if (pathname === '/api/logout') {
+    res.writeHead(302, {
+      'Set-Cookie': `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=0`,
+      'Location': '/'
+    });
+    res.end();
+    return;
+  }
+
+  if (!isAuthed(req)) {
+    if (pathname.startsWith('/api/')) {
+      res.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: 'Not signed in' }));
+    } else {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(loginPage());
+    }
+    return;
+  }
 
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
