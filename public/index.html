@@ -2243,6 +2243,45 @@ function arcResize() {
   ARC.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
+// Pushes values apart until each has at least minGap of room, preserving
+// order and staying inside [-1, 1]. Used because real mornings cluster: six
+// events between 6am and 9am land a few pixels apart on a proportional scale,
+// which stacks their labels on top of one another.
+function declusterU(us, minGap) {
+  const n = us.length;
+  if (n < 2) return us.slice();
+  const out = us.slice();
+  for (let i = 1; i < n; i++) {
+    if (out[i] - out[i - 1] < minGap) out[i] = out[i - 1] + minGap;
+  }
+  const over = out[n - 1] - 1;
+  if (over > 0) for (let i = 0; i < n; i++) out[i] -= over;
+  for (let i = n - 2; i >= 0; i--) {
+    if (out[i + 1] - out[i] < minGap) out[i] = out[i + 1] - minGap;
+  }
+  for (let i = 0; i < n; i++) out[i] = clamp(out[i], -1, 1);
+  return out;
+}
+
+// Monotonic piecewise-linear remap, so the NOW marker moves with the nodes it
+// sits between and can't end up on the wrong side of one after de-clustering.
+function remapU(x, from, to) {
+  const n = from.length;
+  if (!n) return x;
+  if (x <= from[0]) {
+    const span = from[0] - (-1) || 1;
+    return -1 + (x - (-1)) * ((to[0] - (-1)) / span);
+  }
+  for (let i = 1; i < n; i++) {
+    if (x <= from[i]) {
+      const span = from[i] - from[i - 1] || 1;
+      return to[i - 1] + (x - from[i - 1]) * ((to[i] - to[i - 1]) / span);
+    }
+  }
+  const span = 1 - from[n - 1] || 1;
+  return to[n - 1] + (x - from[n - 1]) * ((1 - to[n - 1]) / span);
+}
+
 function buildDayArc() {
   if (!ARC.ready) return;
   const meetings = activeMeetings();
@@ -2274,7 +2313,26 @@ function buildDayArc() {
     };
   });
 
-  ARC.nowU = isTomorrow ? null : uOf(toMin(now));
+  // Spread the nodes so every one has room for a label. The printed time on
+  // each node stays exact, so this costs spatial precision, not accuracy —
+  // and an unreadable label costs far more than a slightly-shifted dot.
+  const trueU = ARC.nodes.map(n => n.u);
+  if (trueU.length > 1) {
+    const R = Math.min((ARC.w || 1400) * ARC_GEO.RFRAC, ARC_GEO.RMAX);
+    // Enough room for a label, but never more than the arc can hold.
+    const want = 112 / R;
+    const maxGap = 2 / (trueU.length - 1);
+    const relaxed = declusterU(trueU, Math.min(want, maxGap));
+    ARC.nodes.forEach((n, i) => { n.u = relaxed[i]; });
+    ARC.trueU = trueU;
+    ARC.relaxedU = relaxed;
+  } else {
+    ARC.trueU = trueU;
+    ARC.relaxedU = trueU;
+  }
+
+  const nowRaw = isTomorrow ? null : uOf(toMin(now));
+  ARC.nowU = nowRaw == null ? null : remapU(nowRaw, ARC.trueU, ARC.relaxedU);
   arcAimAtSelection();
 }
 
@@ -2429,39 +2487,135 @@ function arcDraw(ts) {
     }
   });
 
-  // Labels last, nearest first. Every event gets one; if two would collide the
-  // later one drops to a second row rather than disappearing, because a node
-  // with no name on it is just a dot.
-  const rows = [[], []];
-  placed.slice().reverse().forEach(({ n, p }) => {
+  /* Label placement.
+     Two things went wrong before this. The time labels above the nodes had no
+     collision handling at all, so on a real morning "8:30 AM" printed straight
+     through "9:00 AM". And the name labels had only two rows with an explicit
+     give-up-and-overlap fallback, which is exactly what you saw.
+
+     Now both bands are laid out by row assignment, and priority decides who
+     gets a slot when there aren't enough: the selected event first, then
+     whatever is happening now, then the soonest upcoming, then the rest. If no
+     row is free the label is LEFT OFF and the node is drawn a little larger
+     instead. An unlabelled dot is recoverable — the schedule strip underneath
+     lists everything at full size — but two names printed through each other
+     are not readable at all, which defeats the point of the dashboard. */
+  /* Label placement — real 2D collision, not rows.
+     Three bugs got fixed here in sequence, and the last one is the subtle one:
+       1. Time labels had no collision handling at all.
+       2. Name clearance used a flat 104px when "Recruiter AI Movement" is over
+          300px wide, so neighbours that "passed" still printed through.
+       3. The row system offset each label from ITS OWN node's y — but the
+          nodes sit on an arc, so row 1 for a node near the top of the curve
+          lands at the same screen height as row 0 for one at the end. They
+          were never horizontal bands, which is why labels still collided.
+     So: measure each label, build its rectangle, and test it against every
+     rectangle already placed. Priority decides who gets first refusal, and
+     anything that cannot be placed is left unlabelled rather than printed on
+     top of a neighbour — the schedule strip below lists every event at full
+     size, so an unlabelled dot loses nothing. */
+  const LABEL_PAD_X = 14, LABEL_PAD_Y = 4, MAX_ROWS = 4;
+  const rects = [];
+  const rectFree = r => rects.every(o =>
+    r.x1 <= o.x0 || r.x0 >= o.x1 || r.y1 <= o.y0 || r.y0 >= o.y1);
+  const mkRect = (cx, cy, half, fs) => ({
+    x0: cx - half - LABEL_PAD_X, x1: cx + half + LABEL_PAD_X,
+    y0: cy - fs - LABEL_PAD_Y,   y1: cy + LABEL_PAD_Y
+  });
+
+  const priority = ({ n }) => {
+    if (n.i === state.selectedIdx) return 0;
+    if (n.i === ARC.hover) return 1;            // always name what he's pointing at
+    if (n.isNow) return 2;
+    return n.done ? 4 : 3;                      // upcoming beats already-done
+  };
+  const order = placed.slice().sort((a, b) =>
+    priority(a) - priority(b) || b.p.d - a.p.d);
+
+  const labelled = new Set();
+  order.forEach(({ n, p }) => {
     const sel = n.i === state.selectedIdx;
     const r = (8 + p.d * 8) * (sel ? 1.5 : 1);
-    const fs = Math.round(12 + p.d * 4);
-    const op = Math.min(1, (0.6 + p.d * 0.4) * (n.done ? 0.62 : 1));
+    const fs = Math.round(13 + p.d * 4);
+    const op = Math.min(1, (0.62 + p.d * 0.38) * (n.done ? 0.68 : 1));
 
-    let row = 0;
-    if (rows[0].some(x => Math.abs(x - p.x) < 104)) row = 1;
-    if (row === 1 && rows[1].some(x => Math.abs(x - p.x) < 104)) row = 0; // give up, overlap
-    rows[row].push(p.x);
+    const nameFont = `${sel ? 700 : 600} ${fs + 3}px Inter, system-ui, sans-serif`;
+    const timeFont = `700 ${fs}px 'Space Grotesk', Inter, system-ui, sans-serif`;
+    ctx.font = nameFont;
+    const nameHalf = ctx.measureText(n.label).width / 2;
+    ctx.font = timeFont;
+    const timeHalf = ctx.measureText(n.time).width / 2;
 
-    const yName = p.y + r + fs + 12 + row * (fs + 20);
+    // Names go below the node, stepping down until one fits on screen.
+    let nameY = null, nameRect = null;
+    for (let row = 0; row < MAX_ROWS; row++) {
+      const y = p.y + r + fs + 13 + row * (fs + 21);
+      if (y > h - 14) break;                    // would fall out of the card
+      const rc = mkRect(p.x, y, nameHalf, fs + 3);
+      if (rectFree(rc)) { nameY = y; nameRect = rc; break; }
+    }
+    if (nameY === null) return;                 // no room; stays an unlabelled node
+
+    // Times go above, same treatment.
+    let timeY = null, timeRect = null;
+    for (let row = 0; row < MAX_ROWS; row++) {
+      const y = p.y - r - 13 - row * (fs + 7);
+      if (y < 16) break;
+      const rc = mkRect(p.x, y, timeHalf, fs);
+      if (rectFree(rc)) { timeY = y; timeRect = rc; break; }
+    }
+
+    rects.push(nameRect);
+    if (timeRect) rects.push(timeRect);
+    labelled.add(n.i);
 
     ctx.textAlign = 'center';
-    ctx.shadowColor = 'rgba(0,0,0,0.92)';
-    ctx.shadowBlur = 9;
-    ctx.font = `700 ${fs}px 'Space Grotesk', Inter, system-ui, sans-serif`;
-    ctx.fillStyle = rgba(n.rgb, Math.min(1, op + 0.2).toFixed(3));
-    ctx.fillText(n.time, p.x, p.y - r - 13);
-    ctx.font = `${sel ? 700 : 600} ${fs + 3}px Inter, system-ui, sans-serif`;
+    ctx.shadowColor = 'rgba(0,0,0,0.95)';
+    ctx.shadowBlur = 10;
+
+    if (timeY !== null) {
+      ctx.font = timeFont;
+      ctx.fillStyle = rgba(n.rgb, Math.min(1, op + 0.2).toFixed(3));
+      ctx.fillText(n.time, p.x, timeY);
+    }
+
+    ctx.font = nameFont;
     ctx.fillStyle = `rgba(246,248,251,${op.toFixed(3)})`;
-    ctx.fillText(n.label, p.x, yName);
+    ctx.fillText(n.label, p.x, nameY);
+
     if (sel) {
-      ctx.font = `600 ${fs - 1}px Inter, system-ui, sans-serif`;
-      ctx.fillStyle = rgba(n.rgb, 0.92);
-      ctx.fillText((n.catLabel || '').toUpperCase(), p.x, yName + fs + 6);
+      const cy = nameY + fs + 6;
+      const rc = mkRect(p.x, cy, ctx.measureText(n.catLabel || '').width / 2, fs - 1);
+      if (cy < h - 8 && rectFree(rc)) {
+        ctx.font = `600 ${fs - 1}px Inter, system-ui, sans-serif`;
+        ctx.fillStyle = rgba(n.rgb, 0.92);
+        ctx.fillText((n.catLabel || '').toUpperCase(), p.x, cy);
+        rects.push(rc);
+      }
     }
     ctx.shadowBlur = 0;
   });
+
+  ARC.labelRects = rects;   // exposed so tests can assert nothing overlaps
+
+  // Anything that couldn't be labelled gets a faint ring, so it reads as a
+  // real event worth hovering rather than a smudge on the curve.
+  ARC.unlabelled = ARC.nodes.length - labelled.size;
+  if (ARC.unlabelled > 0) {
+    placed.forEach(({ n, p }) => {
+      if (labelled.has(n.i)) return;
+      const r = 8 + p.d * 8;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r + 6, 0, Math.PI * 2);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = rgba(n.rgb, 0.4);
+      ctx.stroke();
+    });
+    ctx.textAlign = 'right';
+    ctx.font = '600 11px Inter, system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(139,149,163,0.9)';
+    ctx.fillText(`+${ARC.unlabelled} more · hover to name`, w - 22, 30);
+  }
 
   arcVignette(ctx, w, h);
 }
