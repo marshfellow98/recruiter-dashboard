@@ -330,6 +330,10 @@ async function getZoomToken() {
     throw new Error(`Zoom token request failed: ${res.status} ${JSON.stringify(res.body).slice(0, 200)}`);
   }
   tokens.zoom = res.body.access_token;
+  // Zoom states the granted scopes in the token response. Worth keeping: it is
+  // the only way to tell "the scope was never added" from "the scope is there
+  // and the data genuinely isn't", which otherwise look identical from here.
+  tokens.zoomScopes = res.body.scope || null;
   // Refresh a minute early rather than racing the expiry.
   const ttl = Number(res.body.expires_in || 3600);
   tokens.zoomExpiry = Date.now() + Math.max(60, ttl - 60) * 1000;
@@ -341,6 +345,7 @@ async function getZoomToken() {
 function resetZoomToken() {
   tokens.zoom = null;
   tokens.zoomExpiry = null;
+  tokens.zoomScopes = null;
 }
 
 async function zoomGet(path) {
@@ -1028,6 +1033,59 @@ async function handleAPI(pathname, query) {
       details: (b.summary_details || []).map(d => ({ label: d.label, summary: d.summary })),
       nextSteps: b.next_steps || []
     };
+  }
+
+  /* Raw Zoom recap diagnostics.
+
+     Needed because every interesting failure here looks the same from the
+     dashboard: a scope that was never granted, a summary hosted by somebody
+     else, a paginated list whose newest page we never asked for, and "AI
+     Companion was simply off for that call" all render as an empty panel.
+
+     This reports the scopes Zoom says the token has, follows next_page_token
+     to the end rather than trusting one page, and hands back the untouched
+     records so the host and the dates can be read directly. Bounded to the one
+     Zoom path on purpose — not a general-purpose proxy. */
+  if (pathname === '/api/debug/zoom') {
+    if (query.fresh !== '0') resetZoomToken();
+    const days = Math.min(Math.max(Number(query.days) || 30, 1), 365);
+    const iso = d => d.toISOString().slice(0, 10);
+    const to = new Date();
+    const from = new Date(to.getTime() - days * 86400000);
+    const size = Math.min(Math.max(Number(query.page_size) || 30, 1), 300);
+    const base = query.path === 'user' ? '/v2/users/me/meeting_summaries'
+                                      : '/v2/meetings/meeting_summaries';
+
+    const out = { endpoint: base, from: iso(from), to: iso(to), pages: [], records: [] };
+    try { await getZoomToken(); } catch (e) { out.tokenError = e.message; }
+    out.grantedScopes = tokens.zoomScopes;
+
+    let token = '', page = 0;
+    while (page < 10) {
+      const qs = `from=${iso(from)}&to=${iso(to)}&page_size=${size}` +
+                 (token ? `&next_page_token=${encodeURIComponent(token)}` : '');
+      const res = await zoomGet(`${base}?${qs}`);
+      page++;
+      out.pages.push({ page, status: res.status,
+                       count: (res.body?.summaries || []).length,
+                       pageSize: res.body?.page_size,
+                       totalRecords: res.body?.total_records,
+                       nextPageToken: res.body?.next_page_token || null,
+                       error: res.status >= 400 ? res.body : undefined });
+      if (res.status >= 400) break;
+      out.records.push(...(res.body?.summaries || []));
+      token = res.body?.next_page_token || '';
+      if (!token) break;
+    }
+    // Untouched, so the host email and the real dates can be read as Zoom sent
+    // them, plus a grouping that answers "whose summaries are these".
+    out.total = out.records.length;
+    out.byHost = out.records.reduce((m, r) => {
+      const h = r.meeting_host_email || r.meeting_host_id || 'unknown';
+      m[h] = (m[h] || 0) + 1; return m;
+    }, {});
+    out.newest = out.records.map(r => r.meeting_start_time).sort().slice(-1)[0] || null;
+    return out;
   }
 
   if (pathname === '/api/debug/news') {
