@@ -962,14 +962,22 @@ async function handleAPI(pathname, query) {
        $search, which cannot be combined with $filter but is served. (The
        long-standing /api/emails query has the same filter-and-sort shape and
        has been quietly falling back to search for the same reason.) */
+    const probes = [];
     const pages = await Promise.all(senders.map(async s => {
       const esc = s.replace(/'/g, "''");
       const byFilter = await ask(
         `$filter=${encodeURIComponent(`from/emailAddress/address eq '${esc}'`)}&${SELECT}&$top=${top}`);
-      if (byFilter.status === 200) return byFilter;
-      // %20, not a literal space: Node's http client throws "Request path
-      // contains unescaped characters" on a raw space in the path.
-      const bySearch = await ask(`$search=${encodeURIComponent(`"from:${s}"`)}&${SELECT}&$top=${top}`);
+      if (byFilter.status === 200 && (byFilter.body?.value || []).length) {
+        probes.push({ s, via: 'filter', n: byFilter.body.value.length });
+        return byFilter;
+      }
+      /* The quotes go around the ENCODED term, not through the encoder. Graph
+         wants $search="…" with literal double quotes; sending %22 made it
+         search for a token beginning with a quote character, which matched
+         nothing at all and looked exactly like an empty mailbox. */
+      const bySearch = await ask(`$search="${encodeURIComponent(`from:${s}`)}"&${SELECT}&$top=${top}`);
+      probes.push({ s, via: bySearch.status === 200 ? 'search' : 'failed',
+                    n: (bySearch.body?.value || []).length, status: bySearch.status });
       return bySearch.status === 200 ? bySearch : byFilter;
     }));
 
@@ -1018,7 +1026,11 @@ async function handleAPI(pathname, query) {
       .filter(r => (r.id && seen.has(r.id)) ? false : (seen.add(r.id), true))
       .sort((a, b) => Date.parse(b.received) - Date.parse(a.received))
       .slice(0, top);
-    return { count: list.length, source: 'otter', days, recaps: list };
+    // `probes` says which query shape each sender needed and how much it
+    // returned. Without it, "no recaps" and "the query matched nothing because
+    // its syntax was wrong" are the same empty panel.
+    return { count: list.length, source: 'otter', days, recaps: list,
+             probes, raw: (res.body?.value || []).length };
   }
 
   // Resolve only the attendees on the schedule. Replaces the old behaviour of
