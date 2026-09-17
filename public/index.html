@@ -757,6 +757,39 @@
   }
   .notes-edit-btn:hover { color: var(--t1); background: rgba(255,255,255,0.11); transform: translateY(-1px); }
   .notes-text.notes-own { border-left-color: var(--violet); }
+
+  /* ── Zoom AI Companion recap ───────────────────────────────────────────── */
+  .zoom-recap { display: none; margin-top: 12px; }
+  .zoom-recap.open { display: block; }
+  .zoom-recap-head {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+  .zoom-recap-badge {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    color: #8ec5ff; background: rgba(60,130,255,0.16);
+    border: 1px solid rgba(60,130,255,0.42); border-radius: 7px; padding: 4px 9px;
+  }
+  .zoom-recap-when { font-size: 12.5px; font-weight: 600; color: var(--t3); }
+  .zoom-recap-topic { font-size: 12.5px; color: var(--t4); }
+  .zoom-recap-body {
+    font-size: 15.5px; line-height: 1.7; color: var(--t2);
+    padding: 15px 16px; background: rgba(13,16,22,0.9);
+    border-radius: 12px; border-left: 3px solid rgba(60,130,255,0.7);
+  }
+  .zoom-recap-steps { margin: 12px 0 0; padding-left: 20px; }
+  .zoom-recap-steps li { margin-bottom: 6px; }
+  .zoom-recap-sub {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    color: var(--t3); margin-top: 14px;
+  }
+  .zoom-recap-none { font-size: 13.5px; color: var(--t4); padding: 4px 0; }
+  .zoom-recap-more { margin-top: 14px; }
+  .zoom-recap-more > summary {
+    cursor: pointer; font-size: 13.5px; font-weight: 600; color: #8ec5ff;
+    padding: 9px 2px; min-height: 40px; display: flex; align-items: center;
+  }
+  .zoom-recap-more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
   .notes-editor { display: none; }
   .notes-editor.open { display: block; }
   .notes-input {
@@ -1036,6 +1069,7 @@
           <button class="notes-edit-btn" id="notes-edit-btn" onclick="startEditNote()">✎ Add a note</button>
         </div>
         <div class="notes-text" id="notes-text">Loading…</div>
+        <div class="zoom-recap" id="zoom-recap"></div>
         <div class="notes-editor" id="notes-editor">
           <textarea id="notes-input" class="notes-input" rows="6"
                     placeholder="Type your notes — saved here and pushed to RecruiterFlow"></textarea>
@@ -4064,7 +4098,105 @@ function renderNotes(name, fallbackText, candidateId) {
   }
 
   if (btn) btn.textContent = (local && local.text) ? '✎ Edit note' : '✎ Add a note';
+  renderZoomRecap(name);
   cancelEditNote(true);   // always leave the editor closed after a re-render
+}
+
+/* ── Zoom AI Companion recaps ─────────────────────────────────────────────
+   The recap he liked, in the place he asked for it: under the notes, on the
+   person it belongs to.
+
+   Matching is by name in the meeting topic, which is the only reliable link
+   Zoom gives us. A call held in a personal meeting room is titled "Shane
+   Graham's Personal Meeting Room" and names nobody, so those cannot be
+   attributed to a candidate and are deliberately not guessed at — putting the
+   wrong person's call summary on a candidate card is worse than showing none.
+   Topics like "Aneesha Kochar & Shane Graham" match cleanly. */
+const ZOOM = { list: [], loaded: false, error: null, newest: null, returned: 0,
+               bodies: {}, days: 90 };
+
+async function loadZoomRecaps() {
+  try {
+    const data = await apiFetch(`/api/zoom/summaries?days=${ZOOM.days}`);
+    if (data && data.error) { ZOOM.error = data.hint || `Zoom error ${data.status}`; }
+    else {
+      ZOOM.list = (data && data.summaries) || [];
+      ZOOM.newest = data && data.newest;
+      ZOOM.returned = (data && data.returned) || 0;
+      ZOOM.error = null;
+    }
+  } catch (e) {
+    ZOOM.error = e.message;
+  }
+  ZOOM.loaded = true;
+  if (NOTE_EDIT.name) renderZoomRecap(NOTE_EDIT.name);
+}
+
+// Both name parts must appear, so "Dustin Smith" doesn't collect every Smith.
+function zoomRecapsFor(name) {
+  const parts = String(name || '').toLowerCase().split(/\s+/).filter(p => p.length > 1);
+  if (parts.length < 2) return [];
+  return ZOOM.list.filter(s => {
+    const topic = String(s.topic || '').toLowerCase();
+    return parts.every(p => topic.includes(p));
+  });
+}
+
+async function renderZoomRecap(name) {
+  const box = document.getElementById('zoom-recap');
+  if (!box) return;
+  const matches = zoomRecapsFor(name);
+  if (!matches.length) { box.classList.remove('open'); box.innerHTML = ''; return; }
+
+  const s = matches[0];                       // newest, the server sorts them
+  const when = new Date(s.start);
+  const stamp = isNaN(when) ? '' : when.toLocaleDateString('en-US',
+    { weekday: 'short', month: 'short', day: 'numeric' });
+
+  box.classList.add('open');
+  box.innerHTML =
+    `<div class="zoom-recap-head">
+       <span class="zoom-recap-badge">ZOOM AI RECAP</span>
+       <span class="zoom-recap-when">${esc(stamp)}</span>
+       <span class="zoom-recap-topic">${esc(s.topic || '')}</span>
+     </div>
+     <div class="zoom-recap-body" id="zoom-recap-body">Loading the recap…</div>`;
+
+  let body = ZOOM.bodies[s.uuid];
+  if (!body) {
+    try {
+      body = await apiFetch(`/api/zoom/summary?uuid=${encodeURIComponent(s.uuid)}`);
+      ZOOM.bodies[s.uuid] = body;
+    } catch (e) {
+      body = { error: true, message: e.message };
+    }
+  }
+  // He may well have clicked elsewhere while that was in flight.
+  if (!document.getElementById('zoom-recap-body') || zoomRecapsFor(NOTE_EDIT.name)[0]?.uuid !== s.uuid) return;
+
+  const el = document.getElementById('zoom-recap-body');
+  if (!body || body.error) {
+    el.textContent = 'Couldn’t load this recap just now.';
+    return;
+  }
+  const steps = (body.nextSteps || []).filter(t => typeof t === 'string' && t.trim());
+  const details = (body.details || []).filter(d => d && d.summary);
+  el.innerHTML = esc(body.overview || 'No overview in this recap.').replace(/\n/g, '<br>') +
+    (steps.length
+      ? `<div class="zoom-recap-sub">NEXT STEPS</div><ul class="zoom-recap-steps">` +
+        steps.map(t => `<li>${esc(t)}</li>`).join('') + `</ul>`
+      : '') +
+    // Native disclosure: keyboard-reachable and screen-reader friendly without
+    // a line of script. The section summaries are the substance of the recap,
+    // but all of it at once is a wall of text on a card read at a glance.
+    (details.length
+      ? `<details class="zoom-recap-more"><summary>What was discussed` +
+        ` (${details.length} section${details.length === 1 ? '' : 's'})</summary>` +
+        details.map(d =>
+          `<div class="zoom-recap-sub">${esc(d.label || '')}</div>` +
+          `<div>${esc(d.summary).replace(/\n/g, '<br>')}</div>`).join('') +
+        `</details>`
+      : '');
 }
 
 function startEditNote() {
@@ -4175,6 +4307,7 @@ async function loadAll() {
   // Cheap, independent extras.
   loadOverrides().then(() => { renderSchedule(); renderCard(); }).catch(() => {});
   loadLocalNotes().then(() => renderCard()).catch(() => {});
+  loadZoomRecaps().catch(() => {});
   loadWeather().catch(() => {});
   loadNews().catch(() => {});
 
