@@ -4323,7 +4323,8 @@ function renderRecap(name) {
   const matches = recapsFor(name);
   if (!matches.length) { box.classList.remove('open'); box.innerHTML = ''; return; }
 
-  const r = matches[0];                       // newest first, as Graph ordered them
+  // Newest first, but a recap of a call that happened beats a booking note.
+  const r = matches.find(x => x.kind !== 'booking') || matches[0];
   const when = new Date(r.received);
   const stamp = isNaN(when) ? '' : when.toLocaleDateString('en-US',
     { weekday: 'short', month: 'short', day: 'numeric' });
@@ -4341,10 +4342,17 @@ function renderRecap(name) {
 
   const asHtml = arr => arr.map(t => `<div>${esc(t).replace(/\n/g, '<br>')}</div>`).join('');
 
+  /* Name the source. He uses two notetakers — Otter on Zoom, Calendly's own on
+     anything booked through it — and a booking is not a recap of a call that
+     happened, so it says so rather than pretending to be one. */
+  const badge = r.kind === 'booking'
+    ? (r.source === 'calendly' ? 'BOOKED VIA CALENDLY' : 'BOOKING')
+    : (r.source === 'calendly' ? 'CALENDLY RECAP' : 'MEETING RECAP');
+
   box.classList.add('open');
   box.innerHTML =
     `<div class="zoom-recap-head">
-       <span class="zoom-recap-badge">MEETING RECAP</span>
+       <span class="zoom-recap-badge">${esc(badge)}</span>
        <span class="zoom-recap-when">${esc(stamp)}</span>
        <span class="zoom-recap-topic">${esc(r.title || '')}</span>
      </div>
