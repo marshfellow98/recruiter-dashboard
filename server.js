@@ -350,12 +350,17 @@ function recapText(msg) {
   // marker so the card shows the summary rather than the footer.
   const cut = text.search(/(Get the Otter|Download Otter|Unsubscribe|View in Otter|©\s*\d{4}\s*Otter)/i);
   const body = cut > 80 ? text.slice(0, cut) : text;
-  // Otter opens with "Shane Graham has shared notes from <title>, <date>",
-  // which is exactly what the card's own header already says.
-  return body.trim()
-    .replace(/^[^\n]*has shared notes from[^\n]*\n?/i, '')
-    .trim()
-    .slice(0, 6000);
+
+  /* Otter opens with "Shane Graham has shared notes from <title>, <date>",
+     which is exactly what the card's own header already says.
+
+     Strip the SENTENCE, not the line. Otter's HTML often carries no block
+     breaks, so the whole recap de-HTMLs to one long line — and removing the
+     first line then removed the entire summary, which is why every recap came
+     back with an empty body. Only applied if a real summary survives it. */
+  const trimmed = body.trim();
+  const stripped = trimmed.replace(/^[^.\n]*has shared notes from[^.\n]*\.\s*/i, '').trim();
+  return (stripped.length > 40 ? stripped : trimmed).slice(0, 6000);
 }
 
 async function getZoomToken() {
@@ -979,12 +984,18 @@ async function handleAPI(pathname, query) {
       const esc = s.replace(/'/g, "''");
       const f = c => `$filter=${encodeURIComponent(c)}&${SELECT}&$top=${top}`;
       const addr = `from/emailAddress/address eq '${esc}'`;
+      /* $search leads, because it comes back newest-first in practice and is
+         the only shape here that does. filter+date is served and does respect
+         the window, but Graph will not sort it, so it returns an arbitrary 40
+         of the matching mail: against the real mailbox that gave four genuine
+         recaps from July and August while silently omitting the one from two
+         days ago. In-window is not the same as recent. */
       const shapes = [
+        ['search',           `$search="${encodeURIComponent(`from:${s}`)}"&${SELECT}&$top=${top}`],
         // %20, not a literal space: Node's http client rejects a raw space.
         ['filter+date+sort', f(`${addr} and receivedDateTime ge ${since}`) + '&$orderby=receivedDateTime%20desc'],
         ['filter+date',      f(`${addr} and receivedDateTime ge ${since}`)],
         ['filter+sort',      f(addr) + '&$orderby=receivedDateTime%20desc'],
-        ['search',           `$search="${encodeURIComponent(`from:${s}`)}"&${SELECT}&$top=${top}`],
         ['filter',           f(addr)],
       ];
       let firstOk = null;
