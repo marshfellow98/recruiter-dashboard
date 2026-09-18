@@ -1064,19 +1064,33 @@ async function handleAPI(pathname, query) {
         ['filter+sort',      f(addr) + '&$orderby=receivedDateTime%20desc'],
         ['filter',           f(addr)],
       ];
-      let firstOk = null;
+      /* Take the union of the shapes that work, not the first one.
+
+         Neither shape is dependable alone. filter+date respects the window but
+         Graph will not sort it, so it returns an arbitrary 40 of the matching
+         mail — against the real mailbox that meant four genuine recaps from
+         July and August while silently omitting the one from two days ago.
+         $search is recency-biased but eventually consistent: the same request
+         returned 33 records one call and 13 the next, and today's Teams recap
+         was present in one and absent from the other.
+
+         Merging them covers both, and the de-duplication below already handles
+         the overlap. Two successful shapes is enough; there is no point paying
+         for more once recent mail is in hand. */
+      const good = [];
       for (const [via, path] of shapes) {
         const res = await ask(path);
+        if (res.status !== 200) continue;
         const n = (res.body?.value || []).length;
-        if (res.status === 200 && !firstOk) firstOk = { via, res, n };
-        if (res.status === 200 && inWin(res)) {
-          probes.push({ s, via, n, recent: true });
-          return res;
-        }
+        good.push({ via, res, n, recent: inWin(res) });
+        if (good.length >= 2 && good.some(g => g.recent)) break;
       }
-      if (firstOk) { probes.push({ s, via: firstOk.via, n: firstOk.n, recent: false }); return firstOk.res; }
-      probes.push({ s, via: 'failed' });
-      return { status: 0, body: {} };
+      if (!good.length) { probes.push({ s, via: 'failed' }); return { status: 0, body: {} }; }
+      probes.push({ s, via: good.map(g => g.via).join('+'),
+                    n: good.reduce((t, g) => t + g.n, 0),
+                    recent: good.some(g => g.recent) });
+      return { status: 200,
+               body: { value: good.flatMap(g => g.res.body?.value || []) } };
     }));
 
     // One dead alias must not take the others down with it; only a clean sweep
