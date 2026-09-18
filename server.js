@@ -351,7 +351,9 @@ function recapTitle(msg, text) {
   if (/meeting recap|action items?/i.test(subj)) {
     const first = String(text || '').split('\n').map(l => l.trim())
       .find(l => l.length > 2 && !/^view\b|^summar/i.test(l));
-    if (first) return first.replace(/\s+and\s+Shane Graham\s*$/i, '').slice(0, 80);
+    if (first) return first.replace(/\s+and\s+Shane Graham\s*$/i, '')
+                          .replace(/^\s*Shane Graham\s+and\s+/i, '')
+                          .slice(0, 80);
     const from = subj.match(/action items?\s+from\s+(.+)$/i);
     if (from) return from[1].trim();
   }
@@ -398,11 +400,15 @@ function recapText(msg) {
 
   const isNoise = l =>
     /^(view recording|view in otter|view recap|view details|join (the )?meeting|reschedule|cancel)\b/i.test(l) ||
-    // The date/time line and the attendee-email line: the card's own header
-    // already carries the date, and the addresses are not notes.
-    /^[A-Z][a-z]+day, [A-Z][a-z]+ \d{1,2}, \d{4}\s*$/.test(l) ||
-    /^\d{1,2}(:\d{2})?\s*[–-]\s*\d{1,2}(:\d{2})?\s*(am|pm)\s*\(.*\)\s*$/i.test(l) ||
-    /^[^@\s]+@[^@\s]+$/.test(l);
+    /* The date line and the attendee line. Calendly puts the date and the time
+       together ("Friday, September 18, 2026 8:30 – 9 am (CDT)") and lists
+       attendees as a name and an address on one line, so anchoring these to the
+       end of the line matched neither and the card opened on a date and an
+       email address instead of the notes. */
+    /^[A-Z][a-z]+day, [A-Z][a-z]+ \d{1,2}, \d{4}\b/.test(l) ||
+    /^\d{1,2}(:\d{2})?\s*[–-]\s*\d{1,2}(:\d{2})?\s*(am|pm)\b/i.test(l) ||
+    // An address line, not prose: short, contains an @, and isn't a sentence.
+    (/@/.test(l) && l.length < 90 && !/[.!?]\s*$/.test(l) && !/\s(and|with|to|from)\s/i.test(l));
 
   const kept = text.split('\n').filter(l => !isNoise(l)).join('\n').trim();
   let body = kept.length > 60 ? kept : text.trim();
