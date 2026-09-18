@@ -656,6 +656,63 @@
     background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
     padding: 4px 12px; border-radius: 20px;
   }
+  /* ── Nearby clients: range control and the place panel ─────────────────── */
+  .geomap-tools {
+    position: absolute; top: 14px; right: 18px; z-index: 5;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .geomap-tools[hidden] { display: none; }
+  .geomap-range, .geomap-today {
+    font: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
+    color: var(--t3); background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 999px;
+    padding: 6px 12px; cursor: pointer; transition: all 0.16s ease;
+  }
+  .geomap-range:hover, .geomap-today:hover {
+    color: var(--t1); background: rgba(255,255,255,0.1);
+  }
+  .geomap-range.on {
+    color: #06110c; background: var(--accent); border-color: transparent;
+  }
+  .geomap-today { margin-left: 6px; color: var(--t2); }
+  .geomap-detail {
+    position: absolute; z-index: 6; top: 52px; right: 18px; width: 300px;
+    max-height: calc(100% - 96px); overflow-y: auto;
+    padding: 16px 18px 18px; border-radius: 20px;
+    background: rgba(12,13,17,0.93);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+            backdrop-filter: blur(18px) saturate(150%);
+    border: 1px solid rgba(255,255,255,0.13);
+    box-shadow: 0 18px 50px rgba(0,0,0,0.55);
+    opacity: 0; transform: translateY(-6px); pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+  }
+  .geomap-detail.open { opacity: 1; transform: none; pointer-events: auto; }
+  .geomap-detail-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+    margin-bottom: 4px;
+  }
+  .geomap-detail-where { font-size: 16px; font-weight: 700; color: var(--t1); }
+  .geomap-detail-close {
+    font: inherit; font-size: 18px; line-height: 1; color: var(--t4);
+    background: none; border: none; cursor: pointer; padding: 0 2px;
+  }
+  .geomap-detail-close:hover { color: var(--t1); }
+  .geomap-detail-sub {
+    font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--t4); margin-bottom: 12px;
+  }
+  .geomap-firm { padding: 9px 0; border-top: 1px solid rgba(255,255,255,0.08); }
+  .geomap-firm-name { font-size: 14px; font-weight: 600; color: var(--t1); }
+  .geomap-firm-alias { font-size: 11px; color: var(--t4); margin-top: 2px; }
+  .geomap-person {
+    display: block; width: 100%; text-align: left; margin-top: 7px;
+    font: inherit; color: var(--t2); background: none; border: none;
+    padding: 2px 0; cursor: pointer; text-decoration: none;
+  }
+  .geomap-person:hover .geomap-person-name { color: var(--accent); }
+  .geomap-person-name { font-size: 13.5px; font-weight: 600; color: var(--t2); }
+  .geomap-person-role { font-size: 12px; color: var(--t4); }
   @media (max-width: 1100px) { .geomap { height: 380px; } }
   /* ── Candidate search ─────────────────────────────────────────────────── */
   /* The topbar is a stacking context (position:relative + z-index:1 in the base
@@ -895,6 +952,19 @@
     .geomap { height: 300px; border-radius: 22px; }
     .geomap-missing { position: static; padding: 0 18px 14px; }
 
+    /* The panel is 300px wide and the map is about 360px, so on a phone it
+       covers the pin it belongs to. Dock it to the bottom instead, where it
+       reads as a drawer and leaves the map above it visible. */
+    .geomap-tools { top: auto; bottom: 12px; left: 14px; right: 14px; justify-content: center; }
+    /* Sits above the range row rather than over it — a drawer that buries its
+       own controls is worse than no drawer. */
+    .geomap-detail {
+      top: auto; bottom: 58px; left: 10px; right: 10px; width: auto;
+      max-height: 60%; border-radius: 18px;
+      transform: translateY(8px);
+    }
+    .geomap-detail-sub { letter-spacing: 0.04em; }
+
     /* Full-width day toggle with real touch targets. */
     .day-toggle { width: 100%; }
     .day-btn { flex: 1; padding: 14px 10px; font-size: 15px; }
@@ -942,6 +1012,9 @@
     .refresh-btn  { min-height: 46px; }
     .notes-edit-btn { min-height: 44px; }
     .sched-item   { min-height: 46px; }
+    .geomap-range { min-height: 40px; padding: 9px 14px; }
+    .geomap-today { min-height: 40px; padding: 9px 14px; }
+    .geomap-person { min-height: 40px; }
     .dayarc-hint  { display: none; }               /* no hover, no drag hint */
   }
 
@@ -1104,10 +1177,19 @@
 <div class="geomap" id="geomap">
   <div class="geomap-head">
     <div class="pulse-dot"></div>
-    <div class="news-title">Where Today Is</div>
+    <div class="news-title" id="geomap-title">Where Today Is</div>
     <div class="geomap-meta" id="geomap-meta"></div>
   </div>
+  <!-- Only shown once the map is centred on someone: how far around them to
+       look, and the way back to the whole day. -->
+  <div class="geomap-tools" id="geomap-tools" hidden>
+    <button type="button" class="geomap-range" data-range="50">50 mi</button>
+    <button type="button" class="geomap-range" data-range="100">100 mi</button>
+    <button type="button" class="geomap-range" data-range="state">State</button>
+    <button type="button" class="geomap-today" id="geomap-today">← Whole day</button>
+  </div>
   <canvas id="geomap-canvas"></canvas>
+  <div class="geomap-detail" id="geomap-detail"></div>
   <div class="geomap-missing" id="geomap-missing"></div>
 </div>
 
@@ -2252,6 +2334,7 @@ function selectCandidate(idx) {
   renderSchedule();
   renderCard();
   generatePrep();
+  refreshNearby();     // re-centre the map on them and pull in who else is near
 }
 
 function switchTab(btn, id) {
@@ -3649,8 +3732,16 @@ function mapFit() {
   // Taking a plain min() of the two scales against a fixed span floor meant a
   // compact cluster on a 3.6:1 panel got framed by the height and zoomed out
   // to ~50 degrees of longitude, stranding the pins in a sea of empty map.
-  let spanLat = Math.max(maxLat - minLat, 2.2);         // floor: ~240km of context
-  let spanLon = Math.max((maxLon - minLon) * kx, 2.2);
+  /* The floor stops a single pin from zooming to street level with no context
+     around it. Centred on a person it follows the range he asked for, so a
+     50-mile search frames roughly 50 miles: the 2.2° day-view floor framed
+     half of California around two pins 36 miles apart, and everything
+     interesting sat in a thumbnail in the middle. */
+  const floor = MAP.mode === 'focus'
+    ? clamp((NEARBY.scope === 'state' ? 240 : NEARBY.miles * 1.7) / 69, 1.1, 12)
+    : 2.2;
+  let spanLat = Math.max(maxLat - minLat, floor);
+  let spanLon = Math.max((maxLon - minLon) * kx, floor);
   if (spanLon / spanLat < aspect) spanLon = spanLat * aspect;
   else spanLat = spanLon / aspect;
 
@@ -3659,8 +3750,148 @@ function mapFit() {
   MAP.view = { lat0, lon0, kx, scale: Math.max(2, innerW / spanLon), yShift: -16 };
 }
 
+/* ── Who else is nearby ────────────────────────────────────────────────────
+   The map answers "where is today" by default. The moment he opens someone —
+   from the arc, from the schedule, from search — it re-centres on that person
+   and brings up the clients and contacts around them, because the useful
+   question on the way to a meeting is who else is worth seeing while he is
+   there.
+
+   The places arrive already consolidated: RecruiterFlow holds one firm under
+   several names and several records per office, and drawing that raw put six
+   pins on one city. See buildPlaces() on the server. */
+const NEARBY = {
+  seq: 0, key: null, places: [], totals: null, focus: null,
+  loading: false, error: null, open: null,
+  scope: 'radius', miles: 50
+};
+
+// His choice of range outlives the tab — it is a habit, not a setting.
+try {
+  const saved = localStorage.getItem('rd_nearby_range');
+  if (saved === 'state') NEARBY.scope = 'state';
+  else if (saved) NEARBY.miles = Number(saved) || 50;
+} catch (e) { /* private mode: the default is fine */ }
+
+// Whoever the card is showing. Personal blocks and internal team time are not
+// people with an office, so they leave the map on the day view.
+function focusPerson() {
+  if (state.viewing) {
+    return { name: state.viewing.name, geo: state.viewing.geo || null,
+             company: state.viewing.company || '', cat: 'candidate', idx: -1 };
+  }
+  const m = activeMeetings()[state.selectedIdx];
+  if (!m) return null;
+  const cat = classifyMeeting(m);
+  if (cat === 'personal' || cat === 'team') return null;
+  const name = m.attendees?.[0] || m.title;
+  const c = findCandidate(name) || {};
+  return { name, geo: c.geo || null, company: c.company || '',
+           cat, idx: state.selectedIdx };
+}
+
+async function refreshNearby() {
+  const f = focusPerson();
+  NEARBY.focus = f;
+  const g = f && f.geo;
+
+  if (!g || typeof g.lat !== 'number') {
+    NEARBY.places = []; NEARBY.totals = null; NEARBY.key = null;
+    closeMapDetail();
+    buildGeoMap();
+    return;
+  }
+
+  const key = `${g.lat},${g.lon},${NEARBY.scope},${NEARBY.miles},${g.state}`;
+  if (key === NEARBY.key) { buildGeoMap(); return; }   // same place, same range
+
+  /* Same guard as the prep panel: he clicks through four meetings in a second
+     and the answers come back in whatever order they like. Only the newest
+     request is allowed to write. */
+  const seq = ++NEARBY.seq;
+  NEARBY.loading = true;
+  NEARBY.error = null;
+  closeMapDetail();
+  buildGeoMap();
+
+  try {
+    const qs = NEARBY.scope === 'state'
+      ? `scope=state&state=${encodeURIComponent(g.state || '')}&lat=${g.lat}&lon=${g.lon}`
+      : `lat=${g.lat}&lon=${g.lon}&miles=${NEARBY.miles}`;
+    const d = await apiFetch('/api/nearby?' + qs);
+    if (seq !== NEARBY.seq) return;
+    NEARBY.places = d.places || [];
+    NEARBY.totals = d.totals || null;
+    NEARBY.key = key;
+  } catch (e) {
+    if (seq !== NEARBY.seq) return;
+    NEARBY.places = []; NEARBY.totals = null; NEARBY.key = null;
+    NEARBY.error = e.message || 'could not load';
+  } finally {
+    if (seq === NEARBY.seq) { NEARBY.loading = false; buildGeoMap(); }
+  }
+}
+
+function setNearbyRange(val) {
+  if (val === 'state') { NEARBY.scope = 'state'; }
+  else { NEARBY.scope = 'radius'; NEARBY.miles = Number(val) || 50; }
+  try { localStorage.setItem('rd_nearby_range', String(val)); } catch (e) {}
+  NEARBY.key = null;                       // force the refetch
+  refreshNearby();
+}
+
+function buildFocusMap(f) {
+  MAP.mode = 'focus';
+  MAP.pins = [];
+  MAP.missing = [];
+  const g = f.geo;
+
+  const person = {
+    kind: 'person', focus: true, idx: f.idx, name: f.name,
+    lat: g.lat, lon: g.lon, city: g.city || '', state: g.state || '',
+    precision: g.precision || 'city',
+    rgb: arcColor(f.cat === 'contact' ? 'contact' : 'candidate'),
+    sub: [g.city, g.state].filter(Boolean).join(', ') +
+         (g.precision === 'state' ? ' (approx)' : ''),
+    place: null
+  };
+  MAP.pins.push(person);
+
+  NEARBY.places.forEach((pl, i) => {
+    /* A place at his own coordinates is not a second pin — it is what is at
+       this address. Hanging it off the person's own pin says that, and keeps
+       two markers from sitting on top of each other. */
+    if (Math.abs(pl.lat - g.lat) < 0.02 && Math.abs(pl.lon - g.lon) < 0.02) {
+      person.place = pl;
+      return;
+    }
+    MAP.pins.push({
+      kind: 'place', idx: -1, placeIdx: i, place: pl,
+      name: pl.city || stateName(pl.state),
+      lat: pl.lat, lon: pl.lon,
+      city: pl.city || '', state: pl.state || '',
+      precision: pl.precision || 'city',
+      rgb: arcColor('contact'),
+      count: pl.peopleCount,
+      sub: `${pl.companyCount} firm${pl.companyCount === 1 ? '' : 's'} · ` +
+           `${pl.peopleCount} ${pl.peopleCount === 1 ? 'person' : 'people'}`
+    });
+  });
+
+  mapFit();
+  MAP.animUntil = performance.now() + 1400;
+  renderMapMeta();
+}
+
+function stateName(code) { return code ? `${code} (statewide)` : 'Unknown'; }
+
 function buildGeoMap() {
   if (!MAP.ready) return;
+
+  const f = NEARBY.focus;
+  if (f && f.geo && typeof f.geo.lat === 'number') return buildFocusMap(f);
+
+  MAP.mode = 'day';
   const meetings = activeMeetings();
   const seen = new Map();   // city|state -> count, for spreading co-located pins
   MAP.pins = [];
@@ -3686,12 +3917,14 @@ function buildGeoMap() {
     const off = n === 0 ? 0 : 0.10 + n * 0.02;
 
     MAP.pins.push({
-      idx: i, name,
+      kind: 'person', idx: i, name,
       lat: g.lat + Math.sin(ang) * off,
       lon: g.lon + Math.cos(ang) * off,
       city: g.city || '', state: g.state || '',
       precision: g.precision || 'city',
       rgb: arcColor(cat),
+      sub: [g.city, g.state].filter(Boolean).join(', ') +
+           (g.precision === 'state' ? ' (approx)' : ''),
       time: fmtTime(m.start)
     });
   });
@@ -3704,13 +3937,57 @@ function buildGeoMap() {
 function renderMapMeta() {
   const meta = document.getElementById('geomap-meta');
   const miss = document.getElementById('geomap-missing');
+  const title = document.getElementById('geomap-title');
+  const tools = document.getElementById('geomap-tools');
   if (!meta || !miss) return;
+
+  const f = NEARBY.focus;
+  const focused = MAP.mode === 'focus';
+
+  if (tools) {
+    tools.hidden = !focused;
+    tools.querySelectorAll('.geomap-range').forEach(b => {
+      const on = b.dataset.range === 'state'
+        ? NEARBY.scope === 'state'
+        : NEARBY.scope === 'radius' && Number(b.dataset.range) === NEARBY.miles;
+      b.classList.toggle('on', on);
+    });
+  }
+
+  if (focused) {
+    if (title) title.textContent = `Around ${f.name.split(' ')[0]}`;
+    const t = NEARBY.totals;
+    // The phone has room for the count or the sentence, not both.
+    const tight = window.innerWidth < 760;
+    const range = NEARBY.scope === 'state'
+      ? (tight ? f.geo.state || 'state' : `across ${f.geo.state || 'the state'}`)
+      : (tight ? `${NEARBY.miles} mi` : `within ${NEARBY.miles} mi`);
+    meta.textContent = NEARBY.loading
+      ? (tight ? 'Looking…' : 'Looking up who else is nearby…')
+      : NEARBY.error
+        ? `Nearby clients unavailable — ${NEARBY.error}`
+        : (t && t.people)
+          ? (tight
+              ? `${t.people} people · ${t.companies} firms · ${range}`
+              : `${t.people} contact${t.people === 1 ? '' : 's'} at ${t.companies} ` +
+                `firm${t.companies === 1 ? '' : 's'} ${range} · tap a pin`)
+          : (tight ? `None within ${range}` : `No clients or contacts on file ${range}`);
+    // The chip row belongs to the day view; in focus mode the panel does the talking.
+    miss.innerHTML = '';
+    return;
+  }
+
+  if (title) title.textContent = 'Where Today Is';
 
   const placed = MAP.pins.length;
   const total = placed + MAP.missing.length;
   const approx = MAP.pins.filter(p => p.precision === 'state').length;
 
-  if (!total) {
+  if (f && !f.geo) {
+    // He opened someone the map cannot place. Saying so beats silently
+    // showing him the day and looking broken.
+    meta.textContent = `No location on file for ${f.name} — showing today`;
+  } else if (!total) {
     meta.textContent = 'No candidate meetings today';
   } else {
     let t = `${placed} of ${total} placed`;
@@ -3720,8 +3997,64 @@ function renderMapMeta() {
 
   miss.innerHTML = MAP.missing.length
     ? `<span class="geomap-missing-label">No location on file</span>` +
-      MAP.missing.map(n => `<span class="geomap-chip">${n}</span>`).join('')
+      MAP.missing.map(n => `<span class="geomap-chip">${esc(n)}</span>`).join('')
     : '';
+}
+
+/* ── The place panel ───────────────────────────────────────────────────────
+   One pin can stand for a dozen people across four firms, so the pin itself
+   carries only a count and the panel carries the book: who is at each firm,
+   what they do, and a way through to the record. */
+function mapDetailEl() { return document.getElementById('geomap-detail'); }
+
+function closeMapDetail() {
+  const el = mapDetailEl();
+  if (el) { el.classList.remove('open'); el.innerHTML = ''; }
+  NEARBY.open = null;
+  MAP.dirty = true;
+}
+
+function openMapDetail(place) {
+  const el = mapDetailEl();
+  if (!el || !place) return;
+  if (NEARBY.open && NEARBY.open.id === place.id) { closeMapDetail(); return; }
+  NEARBY.open = place;
+  MAP.dirty = true;
+
+  const where = place.city
+    ? `${place.city}, ${place.state}`
+    : `${place.state} — statewide`;
+  const also = (place.cities || []).filter(c => c && c !== place.city);
+  const sub = [
+    `${place.companyCount} firm${place.companyCount === 1 ? '' : 's'}`,
+    `${place.peopleCount} ${place.peopleCount === 1 ? 'contact' : 'contacts'}`,
+    typeof place.miles === 'number' ? `${place.miles} mi away` : ''
+  ].filter(Boolean).join(' · ');
+
+  el.innerHTML =
+    `<div class="geomap-detail-head">
+       <div class="geomap-detail-where">${esc(where)}</div>
+       <button type="button" class="geomap-detail-close" aria-label="Close">×</button>
+     </div>
+     <div class="geomap-detail-sub">${esc(sub)}${
+       also.length ? ` · incl. ${esc(also.join(', '))}` : ''}</div>` +
+    place.companies.map(co => `
+      <div class="geomap-firm">
+        <div class="geomap-firm-name">${esc(co.name)}</div>
+        ${co.variants && co.variants.length
+          ? `<div class="geomap-firm-alias">also on file as ${esc(co.variants.join(' · '))}</div>`
+          : ''}
+        ${co.people.map(p => `
+          <a class="geomap-person" ${p.id
+              ? `href="https://recruiterflow.com/contacts/${esc(p.id)}" target="_blank" rel="noopener"`
+              : ''}>
+            <span class="geomap-person-name">${esc(p.name)}</span>
+            ${p.title ? `<span class="geomap-person-role"> · ${esc(p.title)}</span>` : ''}
+          </a>`).join('')}
+      </div>`).join('');
+
+  el.querySelector('.geomap-detail-close').addEventListener('click', closeMapDetail);
+  el.classList.add('open');
 }
 
 function mapHitTest(mx, my) {
@@ -3776,11 +4109,18 @@ function geoMapDraw(ts) {
   const labels = [];
   MAP.pins.forEach((p, i) => {
     const s = mapProject(p.lat, p.lon);
-    const sel = p.idx === state.selectedIdx;
+    const place = p.kind === 'place';
+    const sel = p.focus === true || (MAP.mode === 'day' && p.idx === state.selectedIdx);
+    const open = place && NEARBY.open && NEARBY.open.id === p.place.id;
     const hov = i === MAP.hover;
     const drop = (1 - ease) * -26;              // pins fall into place
     const y = s.y + drop;
-    const r = (sel ? 11 : hov ? 9.5 : 7.5);
+    /* A place pin stands for everyone at it, so it grows with the count —
+       but only to a point: an office of twelve should read as busier than an
+       office of two without becoming a blob that swallows its neighbours. */
+    const r = place
+      ? clamp(7.5 + Math.sqrt(p.count || 1) * 1.9, 8, 15) + (open || hov ? 1.5 : 0)
+      : (sel ? 11 : hov ? 9.5 : 7.5);
     const a = ease;
 
     // Ground shadow, so the pin reads as sitting above the map.
@@ -3814,6 +4154,24 @@ function geoMapDraw(ts) {
       ctx.strokeStyle = `rgba(255,255,255,${pulse.toFixed(3)})`;
       ctx.stroke();
     }
+    /* How many people are behind this pin, printed on it. Without the number
+       a consolidated pin looks exactly like a single contact, which is the
+       one thing the consolidation must not do. */
+    if (place && p.count > 1) {
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `700 ${Math.round(r * 0.95)}px Inter, system-ui, sans-serif`;
+      ctx.fillStyle = `rgba(14,10,28,${(0.92 * a).toFixed(3)})`;
+      ctx.fillText(String(p.count), s.x, y + 0.5);
+      ctx.textBaseline = 'alphabetic';
+    }
+    if (open) {
+      ctx.beginPath();
+      ctx.arc(s.x, y, r + 7, 0, Math.PI * 2);
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = rgba(p.rgb, 0.9);
+      ctx.stroke();
+    }
     // A state-centroid pin is an approximation, so mark it rather than letting
     // it pass as a precise location.
     if (p.precision === 'state') {
@@ -3839,21 +4197,29 @@ function geoMapDraw(ts) {
      still shows, and the schedule below names everyone at full size. The
      selected pin is laid out first so it is never the one dropped. */
   const taken = [];
-  const free = r => taken.every(o =>
-    r.x1 <= o.x0 || r.x0 >= o.x1 || r.y1 <= o.y0 || r.y0 >= o.y1);
+  /* Pins block labels too. Until the map started showing a person and the
+     places around them, pins were far enough apart that this never came up;
+     the first focused view put "Ruth Calder / Los Angeles, CA" straight across
+     the Irvine pin 36 miles away, hiding the very thing the label was pointing
+     at. Kept in its own list so MAP.labelRects still means labels. */
+  const clear = (r, o) => r.x1 <= o.x0 || r.x0 >= o.x1 || r.y1 <= o.y0 || r.y0 >= o.y1;
+  const pinBoxes = labels.map(({ s, r }) =>
+    ({ x0: s.x - r - 2, x1: s.x + r + 2, y0: s.y - r - 2, y1: s.y + r + 2 }));
+  const free = r => taken.every(o => clear(r, o)) && pinBoxes.every(o => clear(r, o));
   const MAP_ROWS = 4;
   let mapDropped = 0;
 
   labels.sort((l1, l2) => (l2.sel ? 1 : 0) - (l1.sel ? 1 : 0));
   labels.forEach(({ p, s, sel, r, a }) => {
     const fs = sel ? 16 : 14;
-    const place = [p.city, p.state].filter(Boolean).join(', ') +
-                  (p.precision === 'state' ? ' (approx)' : '');
+    // The second line says where for a person and what is there for a place.
+    const sub = p.sub || ([p.city, p.state].filter(Boolean).join(', ') +
+                          (p.precision === 'state' ? ' (approx)' : ''));
 
     ctx.font = `${sel ? 700 : 600} ${fs}px Inter, system-ui, sans-serif`;
     const nameHalf = ctx.measureText(p.name).width / 2;
     ctx.font = `600 ${fs - 3}px Inter, system-ui, sans-serif`;
-    const placeHalf = ctx.measureText(place).width / 2;
+    const placeHalf = ctx.measureText(sub).width / 2;
     const half = Math.max(nameHalf, placeHalf);
 
     // The 8px is the label box's own padding — clamping to `half` alone let the
@@ -3863,22 +4229,21 @@ function geoMapDraw(ts) {
 
     const boxAt = yName => ({ x0: cx - half - 8, x1: cx + half + 8,
                               y0: yName - fs - 4, y1: yName + fs + 6 });
+    /* Below the pin is the convention, above is the fallback, and the nearest
+       free slot of the two wins. Trying all four rows below before looking up
+       left a label dangling 115px under its pin with clear space directly
+       above it, purely because a neighbouring pin sat in the first two rows. */
     let yName = null, rect = null;
+    const slots = [];
     for (let i = 0; i < MAP_ROWS; i++) {
-      const y = s.y + r + fs + 8 + i * (fs + 17);
-      const rc = boxAt(y);
-      if (rc.y1 > h - 6) break;
-      if (free(rc)) { yName = y; rect = rc; break; }
+      slots.push(s.y + r + fs + 8 + i * (fs + 17));          // below
+      slots.push(s.y - r - 12 - i * (fs + 17) - fs);         // above
     }
-    // Below the pin is the convention, but a pin low on the map runs out of
-    // canvas before it runs out of rows. Try above before giving up on it.
-    if (yName == null) {
-      for (let i = 0; i < MAP_ROWS; i++) {
-        const y = s.y - r - 12 - i * (fs + 17) - fs;
-        const rc = boxAt(y);
-        if (rc.y0 < 34) break;               // clear of the panel's own heading
-        if (free(rc)) { yName = y; rect = rc; break; }
-      }
+    slots.sort((a, b) => Math.abs(a - s.y) - Math.abs(b - s.y));
+    for (const y of slots) {
+      const rc = boxAt(y);
+      if (rc.y1 > h - 6 || rc.y0 < 34) continue;   // off the canvas, or under the heading
+      if (free(rc)) { yName = y; rect = rc; break; }
     }
     if (yName == null) {
       // Nothing free. Ring the pin so it still reads as a placed candidate.
@@ -3916,7 +4281,7 @@ function geoMapDraw(ts) {
 
     ctx.font = `600 ${fs - 3}px Inter, system-ui, sans-serif`;
     ctx.fillStyle = rgba(p.rgb, (0.92 * a).toFixed(3));
-    ctx.fillText(place, Math.round(cx), Math.round(yName + fs + 2));
+    ctx.fillText(sub, Math.round(cx), Math.round(yName + fs + 2));
     ctx.shadowBlur = 0;
   });
   MAP.labelRects = taken;
@@ -3940,7 +4305,8 @@ function geoMapFrame(ts) {
   if (ts - MAP.lastDraw < 40) return;
 
   const animating = ts < MAP.animUntil ||
-                    (!mapReduced() && MAP.pins.some(p => p.idx === state.selectedIdx)) ||
+                    (!mapReduced() && MAP.pins.some(p =>
+                       p.focus || (MAP.mode === 'day' && p.idx === state.selectedIdx))) ||
                     MAP.hover !== MAP.lastHover;
   if (!animating && !MAP.dirty) return;
 
@@ -3972,8 +4338,26 @@ function initGeoMap() {
   cv.addEventListener('click', e => {
     const r = cv.getBoundingClientRect();
     const hit = mapHitTest(e.clientX - r.left, e.clientY - r.top);
-    if (hit >= 0) selectCandidate(MAP.pins[hit].idx);
+    if (hit < 0) { closeMapDetail(); return; }
+    const p = MAP.pins[hit];
+    // A pin with a place behind it opens the place; a plain meeting pin still
+    // selects the meeting, exactly as it always did.
+    if (p.place) openMapDetail(p.place);
+    else if (p.idx >= 0) selectCandidate(p.idx);
   });
+
+  const tools = document.getElementById('geomap-tools');
+  if (tools) {
+    tools.querySelectorAll('.geomap-range').forEach(b => {
+      b.addEventListener('click', () => setNearbyRange(b.dataset.range));
+    });
+    const back = document.getElementById('geomap-today');
+    if (back) back.addEventListener('click', () => {
+      // Back to the whole day, whether he got here from search or the arc.
+      if (state.viewing) clearViewing();
+      else { NEARBY.focus = null; NEARBY.key = null; closeMapDetail(); buildGeoMap(); }
+    });
+  }
 
   buildGeoMap();
   geoMapDraw(performance.now());     // likewise
@@ -4124,6 +4508,7 @@ function viewCandidate(rec) {
   state.viewing = rec;
   renderCard();
   revealMainCard();
+  refreshNearby();
   // Their history is worth having here — "when did we last speak" is most of
   // the reason to look someone up in the first place.
   Promise.all([loadEmails(rec.name), loadCalls(rec.name)])
@@ -4136,6 +4521,12 @@ function clearViewing() {
   renderSchedule();
   renderCard();
   generatePrep();
+  // Back to today means back to the whole day on the map too, not to whichever
+  // meeting happens to be selected underneath.
+  NEARBY.focus = null;
+  NEARBY.key = null;
+  closeMapDetail();
+  buildGeoMap();
 }
 
 function renderViewingCard() {
