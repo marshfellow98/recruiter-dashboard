@@ -600,22 +600,275 @@ function gazetteer() {
 // Returns coordinates plus how precise they are, so the map can distinguish a
 // real city pin from a whole-state approximation instead of implying accuracy
 // it doesn't have.
-function geoForCandidate(c) {
-  const L = (c.location && typeof c.location === 'object') ? c.location : {};
+/* RecruiterFlow's city field is whatever LinkedIn had, and LinkedIn deals in
+   metros: "Greater Boston", "San Francisco Bay Area", "New York City
+   Metropolitan Area". None of those are in a gazetteer of city names, so every
+   one of them used to fall back to a state centroid — Relation Insurance had
+   one contact pinned in San Francisco and another floating in the middle of
+   California. The raw spelling is always tried first, so a real city that
+   happens to contain one of these words (Kansas City, Bay City) still wins. */
+function titleCase(s) {
+  return String(s).replace(/\b[a-z]/g, ch => ch.toUpperCase());
+}
+
+function cityCandidates(city) {
+  const out = [city.toLowerCase()];
+  const push = s => { s = s.replace(/\s+/g, ' ').trim(); if (s && !out.includes(s)) out.push(s); };
+  const cleaned = out[0]
+    .replace(/\b(greater|metropolitan|metro|area|region|county|and surrounds)\b/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  push(cleaned);
+  push(cleaned.replace(/\s+bay$/, ''));        // "san francisco bay" → "san francisco"
+  push(cleaned.replace(/\s+city$/, ''));       // "new york city" → "new york"
+  push(cleaned.split('-')[0]);                 // "dallas-fort worth" → "dallas"
+  push(cleaned.split('/')[0]);
+  return out;
+}
+
+function geoForLocation(L) {
+  if (!L || typeof L !== 'object') return null;
   const g = gazetteer();
   const raw = String(L.state || '').trim();
   const code = raw.length === 2 ? raw.toUpperCase() : (g.stateCodes[raw] || null);
   const city = String(L.city || '').trim();
 
   if (city && code) {
-    const hit = g.cities[city.toLowerCase() + '|' + code];
-    if (hit) return { lat: hit[0], lon: hit[1], city, state: code, precision: 'city' };
+    for (const cand of cityCandidates(city)) {
+      const hit = g.cities[cand + '|' + code];
+      // The gazetteer's spelling is the one that gets shown, so a pin never
+      // reads "Greater Boston, MA" at Boston's coordinates.
+      if (hit) return { lat: hit[0], lon: hit[1],
+                        city: cand === city.toLowerCase() ? city : titleCase(cand),
+                        state: code, precision: 'city' };
+    }
   }
   if (code && g.stateCentroids[code]) {
     const ct = g.stateCentroids[code];
     return { lat: ct[0], lon: ct[1], city, state: code, precision: 'state' };
   }
   return null;
+}
+
+function geoForCandidate(c) {
+  return geoForLocation(c && c.location);
+}
+
+/* ── Clients and contacts, consolidated by place ───────────────────────────
+   RecruiterFlow's contact list is the client side of the business: brokers,
+   hiring managers, the people at the agencies he places into. It carries a
+   company per contact, and the same company shows up under several spellings
+   — "HUB International", "HUB International (OC)" and "HUB International
+   SOCAL" are three records for one firm, and "Ironwood Insurance Services, a
+   Marsh McLennan Agency LLC Company" is a fourth way of writing a fifth.
+   Plotted raw, one city turns into a pile of overlapping pins that all say
+   roughly the same thing.
+
+   So this collapses them twice over: company-name variants fold together
+   within a place, and places themselves fold together when they are within a
+   short drive of each other. What comes out is one pin per place, carrying
+   the companies and the people at them. */
+
+const CONTACT_TTL = Number(process.env.CONTACT_TTL_MS || 20 * 60000);
+let contactsInFlight = null;
+
+async function getContacts() {
+  if (contactsCache.data && Date.now() < contactsCache.expiry) return contactsCache.data;
+  if (contactsInFlight) return contactsInFlight;
+
+  contactsInFlight = (async () => {
+    let all = [];
+    let page = 1;
+    const maxPages = 100;                // up to 10,000 contacts
+    while (page <= maxPages) {
+      const res = await fetchJSON({
+        hostname: 'recruiterflow.com',
+        path: `/api/external/contact/list?current_page=${page}&items_per_page=100`,
+        method: 'GET',
+        headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
+      });
+      const pageData = Array.isArray(res.body) ? res.body : (res.body?.data || []);
+      if (!pageData.length) break;
+      all = all.concat(pageData);
+      if (pageData.length < 100) break;
+      page++;
+    }
+    console.log(`[contacts] ${all.length} contacts across ${page} page(s)`);
+    contactsCache.data = all;
+    contactsCache.expiry = Date.now() + CONTACT_TTL;
+    PLACES.builtFor = null;              // the index is now stale
+    return all;
+  })().finally(() => { contactsInFlight = null; });
+
+  return contactsInFlight;
+}
+
+// Legal suffixes and filler that differ between records for one firm. Words
+// that actually distinguish companies — insurance, financial, risk, benefits —
+// are deliberately NOT in here; stripping those merged genuinely different
+// agencies in testing.
+const CO_NOISE = /\b(inc|incorporated|llc|llp|lp|ltd|limited|plc|co|corp|corporation|company|holdings|the)\b/g;
+
+function coKey(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(CO_NOISE, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// "Ironwood Insurance Services, a Marsh McLennan Agency LLC Company" names its
+// own parent. When the parent is also on file at the same place, that is the
+// one firm written two ways.
+function parentKey(name) {
+  const s = String(name || '');
+  const m = s.match(/[,(]\s*(?:a|an)\s+(.+?)\s*(?:company|agency|firm|business|partner|brand)\s*[)]?\s*$/i)
+         || s.match(/\s+(?:a|an)\s+(.{3,}?)\s+(?:company|partner|brand|division)\s*$/i);
+  return m ? coKey(m[1]) : null;
+}
+
+function milesBetween(lat1, lon1, lat2, lon2) {
+  const R = 3958.8, rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+/* Two places merge when they are within this of each other. Set to swallow the
+   suburbs of one metro — Irvine and Santa Ana are one pin, Los Angeles and San
+   Diego are not — without ever merging across a state line. */
+const PLACE_MERGE_MI = 22;
+
+const PLACES = { list: [], unplaced: [], builtFor: null };
+
+function contactPerson(c) {
+  const emails = Array.isArray(c.email) ? c.email : (c.email ? [c.email] : []);
+  const phones = Array.isArray(c.phone_number) ? c.phone_number : (c.phone_number ? [c.phone_number] : []);
+  return {
+    id: c.id || null,
+    name: rfFullName(c),
+    title: String(c.current_designation || '').trim(),
+    company: String(c.client_company_name || '').trim(),
+    companyId: c.client_company_id || null,
+    email: emails[0] || '',
+    phone: phones[0] || '',
+    lastContacted: c.last_contacted || null
+  };
+}
+
+// Fold the company-name variants at one place into single firms.
+function consolidateCompanies(people) {
+  const byKey = new Map();               // key -> { names:Set, ids:Set, people:[] }
+  for (const p of people) {
+    const raw = p.company || 'No company on file';
+    const key = coKey(raw) || raw.toLowerCase();
+    let e = byKey.get(key);
+    if (!e) byKey.set(key, e = { key, names: new Set(), ids: new Set(), people: [], parents: new Set() });
+    e.names.add(raw);
+    if (p.companyId) e.ids.add(p.companyId);
+    const par = parentKey(raw);
+    if (par) e.parents.add(par);
+    e.people.push(p);
+  }
+
+  /* Shortest key first, so the plain brand becomes the canonical one and the
+     regional spellings attach to it rather than the other way round. */
+  const keys = [...byKey.keys()].sort((a, b) => a.length - b.length || a.localeCompare(b));
+  const canon = new Map();               // key -> canonical key
+  const roots = [];
+  for (const k of keys) {
+    const par = [...byKey.get(k).parents];
+    const hit = roots.find(r =>
+      k === r ||
+      k.startsWith(r + ' ') ||            // "hub international socal" under "hub international"
+      par.includes(r));                   // "…, a Marsh McLennan Agency Company"
+    if (hit) canon.set(k, hit);
+    else { roots.push(k); canon.set(k, k); }
+  }
+
+  const merged = new Map();
+  for (const [k, e] of byKey) {
+    const root = canon.get(k);
+    let m = merged.get(root);
+    if (!m) merged.set(root, m = { key: root, names: new Set(), ids: new Set(), people: [] });
+    e.names.forEach(n => m.names.add(n));
+    e.ids.forEach(i => m.ids.add(i));
+    m.people.push(...e.people);
+  }
+
+  return [...merged.values()].map(m => {
+    const names = [...m.names];
+    // The shortest spelling reads best on a pin: "HUB International", not
+    // "HUB International (OC)". The rest are kept so nothing looks invented.
+    const name = names.slice().sort((a, b) => a.length - b.length)[0];
+    return {
+      name,
+      variants: names.filter(n => n !== name),
+      ids: [...m.ids],
+      people: m.people.sort((a, b) => a.name.localeCompare(b.name))
+    };
+  }).sort((a, b) => b.people.length - a.people.length || a.name.localeCompare(b.name));
+}
+
+async function buildPlaces() {
+  const contacts = await getContacts();
+  if (PLACES.builtFor === contactsCache.expiry) return PLACES;
+
+  const unplaced = [];
+  const seeds = new Map();               // lat|lon|precision -> seed
+
+  for (const c of contacts) {
+    const g = geoForLocation(c.location);
+    const p = contactPerson(c);
+    if (!p.name) continue;
+    if (!g) { unplaced.push(p); continue; }
+    p.city = g.city || '';
+    p.state = g.state || '';
+    const k = `${g.lat.toFixed(4)}|${g.lon.toFixed(4)}|${g.precision}`;
+    let s = seeds.get(k);
+    if (!s) seeds.set(k, s = { lat: g.lat, lon: g.lon, city: g.city, state: g.state,
+                               precision: g.precision, people: [] });
+    s.people.push(p);
+  }
+
+  /* Merge neighbouring seeds into one pin, biggest first so the anchor is the
+     city he is most likely to recognise. A state-centroid seed means "somewhere
+     in Illinois" — merging that into Chicago would put a name on a location we
+     do not actually have, so precision levels never mix. */
+  const ordered = [...seeds.values()].sort((a, b) => b.people.length - a.people.length);
+  const list = [];
+  for (const s of ordered) {
+    const host = list.find(l =>
+      l.precision === s.precision &&
+      l.state === s.state &&
+      (s.precision === 'state' ||
+       milesBetween(l.lat, l.lon, s.lat, s.lon) <= PLACE_MERGE_MI));
+    if (host) {
+      host.people.push(...s.people);
+      if (s.city && !host.cities.includes(s.city)) host.cities.push(s.city);
+    } else {
+      list.push({ id: `p${list.length}`, lat: s.lat, lon: s.lon, city: s.city, state: s.state,
+                  precision: s.precision, cities: s.city ? [s.city] : [], people: s.people });
+    }
+  }
+
+  for (const l of list) {
+    l.companies = consolidateCompanies(l.people);
+    l.peopleCount = l.people.length;
+    l.companyCount = l.companies.length;
+    // The raw per-person list would duplicate what companies[] already carries.
+    delete l.people;
+  }
+  list.sort((a, b) => b.peopleCount - a.peopleCount);
+
+  PLACES.list = list;
+  PLACES.unplaced = unplaced;
+  PLACES.builtFor = contactsCache.expiry;
+  console.log(`[places] ${contacts.length} contacts → ${list.length} places, ` +
+              `${list.reduce((n, l) => n + l.companyCount, 0)} firms, ${unplaced.length} unplaced`);
+  return PLACES;
 }
 
 // Resolve meeting attendee names to candidate records. Returns only the
@@ -1169,7 +1422,14 @@ async function handleAPI(pathname, query) {
   if (pathname === '/api/candidates/search') {
     await getCandidates();
     const hits = searchCandidates(query.q, Math.min(Number(query.limit) || 25, 50));
-    return { query: query.q || '', count: hits.length, results: hits };
+    /* Coordinates ride along exactly as they do on the attendee lookup. Without
+       them a searched candidate reached the card with no location, so the map
+       had nothing to centre on and the whole nearby panel sat out the one case
+       it is most useful for. */
+    return {
+      query: query.q || '', count: hits.length,
+      results: hits.map(c => ({ ...c, _geo: geoForCandidate(c) }))
+    };
   }
 
   if (pathname === '/api/candidates') {
@@ -1181,32 +1441,60 @@ async function handleAPI(pathname, query) {
   }
 
   if (pathname === '/api/contacts') {
-    // Confirmed working endpoint (status 200) — same pagination shape as candidates.
-    // Contacts are people like hiring managers or referral sources who aren't candidates
-    // themselves, so meetings with them can show real title/company/email instead of guessing.
-    if (contactsCache.data && Date.now() < contactsCache.expiry) {
-      return contactsCache.data;
+    return getContacts();
+  }
+
+  /* Who else is worth knowing about near this person. Takes the coordinates
+     the map is already holding for whoever is on the card, and answers with
+     the consolidated places around them — one entry per location, each
+     carrying the firms and the people at it. */
+  if (pathname === '/api/nearby') {
+    const { list, unplaced } = await buildPlaces();
+    const lat = Number(query.lat), lon = Number(query.lon);
+    const statewide = String(query.scope || '') === 'state';
+    const st = String(query.state || '').trim().toUpperCase().slice(0, 2);
+    const miles = Math.min(Math.max(Number(query.miles) || 50, 5), 3000);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      return { error: 'lat and lon are required', places: [] };
     }
-    let allContacts = [];
-    let page = 1;
-    const maxPages = 100; // up to 10,000 contacts — generous headroom, adjust if needed
-    while (page <= maxPages) {
-      const res = await fetchJSON({
-        hostname: 'recruiterflow.com',
-        path: `/api/external/contact/list?current_page=${page}&items_per_page=100`,
-        method: 'GET',
-        headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
-      });
-      const pageData = Array.isArray(res.body) ? res.body : (res.body?.data || []);
-      if (!pageData.length) break;
-      allContacts = allContacts.concat(pageData);
-      if (pageData.length < 100) break;
-      page++;
-    }
-    console.log(`Fetched ${allContacts.length} total contacts across ${page} page(s)`);
-    contactsCache.data = allContacts;
-    contactsCache.expiry = Date.now() + 20 * 60000; // 20 minutes
-    return allContacts;
+
+    const scored = list.map(l => ({ ...l, miles: Math.round(milesBetween(lat, lon, l.lat, l.lon)) }));
+    const near = scored
+      .filter(l => statewide ? (st ? l.state === st : l.miles <= miles) : l.miles <= miles)
+      .sort((a, b) => a.miles - b.miles)
+      .slice(0, 40);
+
+    return {
+      center: { lat, lon },
+      scope: statewide ? 'state' : 'radius',
+      miles: statewide ? null : miles,
+      state: statewide ? (st || null) : null,
+      places: near,
+      totals: {
+        places: near.length,
+        companies: near.reduce((n, l) => n + l.companyCount, 0),
+        people: near.reduce((n, l) => n + l.peopleCount, 0),
+        indexed: list.length,
+        unplaced: unplaced.length
+      }
+    };
+  }
+
+  // The consolidation itself, without a location to centre it on — useful for
+  // checking what merged with what.
+  if (pathname === '/api/debug/places') {
+    const { list, unplaced } = await buildPlaces();
+    return {
+      places: list.length,
+      unplaced: unplaced.length,
+      merged: list.flatMap(l => l.companies.filter(c => c.variants.length)
+        .map(c => ({ place: `${l.city || l.state}`, kept: c.name, folded: c.variants }))),
+      list: list.map(l => ({
+        where: [l.city, l.state].filter(Boolean).join(', ') + (l.precision === 'state' ? ' (statewide)' : ''),
+        cities: l.cities, people: l.peopleCount, companies: l.companies.map(c => c.name)
+      }))
+    };
   }
 
   if (pathname === '/api/calls') {
