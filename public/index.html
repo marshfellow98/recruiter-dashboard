@@ -2118,6 +2118,75 @@ function renderCard() {
 }
 
 // ── AI Prep — routes through server ──────────
+/* Every prep request is numbered, and only the newest may paint the panel.
+
+   The prep call takes a few seconds. Open someone from search while an earlier
+   one is still in flight and the old answer lands afterwards, writing another
+   person's prep beside the card you are reading — which is exactly what he
+   saw: Jeff Colby's card with Tracy's prep next to it. */
+let prepSeq = 0;
+
+async function runPrep({ title, systemPrompt, context, allowDeeper }) {
+  const seq = ++prepSeq;
+  const titleEl = document.getElementById('prep-title');
+  const tipsEl = document.getElementById('prep-tips');
+  const deeper = document.getElementById('deeper-btn');
+  const current = () => seq === prepSeq;
+
+  titleEl.textContent = title;
+  tipsEl.innerHTML = '<div class="tip-loading">Generating prep notes…</div>';
+  if (deeper) deeper.style.display = 'none';
+
+  try {
+    const text = await aiCall(systemPrompt, context);
+    if (!current()) return;                       // a newer view owns the panel
+    const tips = JSON.parse(text.replace(/```json|```/g, '').trim());
+    tipsEl.innerHTML = tips.map(t => `
+      <div class="tip">
+        <div class="tip-head">${esc(t.head)}</div>
+        <div class="tip-body">${esc(t.body)}</div>
+      </div>`).join('');
+  } catch (e) {
+    if (!current()) return;
+    tipsEl.innerHTML = `<div class="tip"><div class="tip-head">Ready</div><div class="tip-body">Review the notes and call history in the tabs above before this call.</div></div>`;
+  }
+  if (current() && deeper && allowDeeper) deeper.style.display = 'flex';
+}
+
+/* Prep for someone opened from search. The card, the recap and the panel beside
+   them should be about the same person; this used to be a fixed line of text
+   saying there was no meeting to prep for, which read as the feature being
+   broken rather than deliberate. The recap is the strongest context we have —
+   it is what was actually said on the last call. */
+function generateViewingPrep(rec) {
+  if (!rec) return;
+  prepSeq++;                                    // cancel any meeting prep in flight
+  const name = rec.name;
+  const recap = (recapsFor(name)[0] || {});
+  const emailContext = (state.emails[name] || []).slice(0, 3)
+    .map(e => `- "${e.subject}" from ${e.from}: ${(e.preview || '').slice(0, 200)}`)
+    .join('\n') || 'none';
+  const note = (state.localNotes[name] || {}).text || rec.notes || 'none';
+
+  const context = `Candidate: ${name}
+Title: ${rec.title} at ${rec.company}
+Stage: ${rec.stage || 'unknown'}
+Location: ${rec.location || 'unknown'}
+Notes: ${note}
+${recap.text ? `Notes from their last recorded call (${new Date(recap.received).toDateString()}):\n${recap.text.slice(0, 1800)}` : 'No recorded call notes on file.'}
+Recent emails:
+${emailContext}
+Calls logged: ${(state.calls[name] || []).length}
+There is no meeting scheduled with this person today — he has looked them up to get back up to speed.`;
+
+  return runPrep({
+    title: `AI Prep · ${String(name).split(' ')[0]}`,
+    systemPrompt: 'You are an expert P&C insurance recruiter assistant. The recruiter has looked this person up outside of today\'s schedule, so tell him where things stand and what to do next. Lean on the call notes and emails for concrete detail — compensation, timelines, competing offers, blockers, and anything personal worth remembering. Return ONLY a JSON array of exactly 3 objects with keys "head" (3-5 word title) and "body" (1-2 sentences, specific and actionable). No markdown, no preamble, raw JSON only.',
+    context,
+    allowDeeper: true
+  });
+}
+
 async function generatePrep() {
   const meetings = activeMeetings();
   const m = meetings[state.selectedIdx];
@@ -2129,6 +2198,7 @@ async function generatePrep() {
   // Team meetings and personal blocks don't get candidate-style AI prep — that's the
   // whole point of separating them out. Show something honest instead, no API call wasted.
   if (category === 'team' || category === 'personal') {
+    prepSeq++;                                  // nothing in flight may overwrite this
     document.getElementById('prep-title').textContent = category === 'team' ? `Team · ${name.split(' ')[0]}` : 'Personal Time';
     document.getElementById('prep-tips').innerHTML = category === 'team'
       ? `<div class="tip"><div class="tip-head">Internal sync</div><div class="tip-body">This is a team meeting, not a candidate call — no prep needed here.</div></div>`
@@ -2138,12 +2208,6 @@ async function generatePrep() {
   }
 
   const c = findCandidate(name)||{};
-
-  document.getElementById('prep-title').textContent = category === 'contact'
-    ? `Contact · ${name.split(' ')[0]}`
-    : `${isTomorrow?'Tomorrow Prep':'AI Prep'} · ${name.split(' ')[0]}`;
-  document.getElementById('prep-tips').innerHTML = '<div class="tip-loading">Generating prep notes…</div>';
-  document.getElementById('deeper-btn').style.display = 'none';
 
   const emailContext = (state.emails[name]||[]).slice(0,3)
     .map(e=>`- "${e.subject}" from ${e.from}: ${(e.preview||'').slice(0,200)}`)
@@ -2173,22 +2237,14 @@ ${isTomorrow?'This call is TOMORROW — focus on advance preparation.':''}`;
     ? 'You are a helpful assistant recapping context for an upcoming meeting with a professional contact (not a recruiting candidate). Read the email content carefully for relevant business context, open items, or personal details that would help build rapport. Return ONLY a JSON array of exactly 3 objects with keys "head" (3-5 word title) and "body" (1-2 sentences, specific and actionable). Base insights directly on the email content when available; if there is none, keep tips general and brief. No markdown, no preamble, raw JSON only.'
     : 'You are an expert P&C insurance recruiter assistant. Read the email content carefully for both business details (compensation, timelines, competing offers, decision blockers) and personal details (family, travel, life events) that would help build rapport or inform strategy. Return ONLY a JSON array of exactly 3 objects with keys "head" (3-5 word title) and "body" (1-2 sentences, specific and actionable). Prioritize insights drawn directly from the email content when available. No markdown, no preamble, raw JSON only.';
 
-  try {
-    const text = await aiCall(
-      systemPrompt,
-      context
-    );
-    const tips = JSON.parse(text.replace(/```json|```/g,'').trim());
-    document.getElementById('prep-tips').innerHTML = tips.map(t=>`
-      <div class="tip">
-        <div class="tip-head">${t.head}</div>
-        <div class="tip-body">${t.body}</div>
-      </div>`).join('');
-    document.getElementById('deeper-btn').style.display = 'flex';
-  } catch(e) {
-    document.getElementById('prep-tips').innerHTML = `<div class="tip"><div class="tip-head">Ready</div><div class="tip-body">Review the notes and call history in the tabs above before this call.</div></div>`;
-    document.getElementById('deeper-btn').style.display = 'flex';
-  }
+  return runPrep({
+    title: category === 'contact'
+      ? `Contact · ${name.split(' ')[0]}`
+      : `${isTomorrow ? 'Tomorrow Prep' : 'AI Prep'} · ${name.split(' ')[0]}`,
+    systemPrompt,
+    context,
+    allowDeeper: true
+  });
 }
 
 function selectCandidate(idx) {
@@ -2207,14 +2263,19 @@ function switchTab(btn, id) {
 
 async function openModal() {
   document.getElementById('modal').classList.add('open');
+  // Follow the card. Opened from search there is no selected meeting to read,
+  // and the modal used to generate a full prep for whoever the arc last had.
   const meetings = activeMeetings();
   const m = meetings[state.selectedIdx];
-  const name = m?.attendees?.[0]||m?.title||'Candidate';
-  const c = findCandidate(name)||{};
+  const name = state.viewing ? state.viewing.name : (m?.attendees?.[0] || m?.title || 'Candidate');
+  const c = (state.viewing || findCandidate(name) || {});
   document.getElementById('modal-title').textContent = `Full Prep · ${name}`;
   document.getElementById('modal-body').innerHTML = '<div class="prep-loading">Generating detailed prep…</div>';
 
-  const context = `Candidate: ${name}\nTitle: ${c.title} at ${c.company}\nStage: ${c.stage}\nNotes: ${c.notes}\nEmails: ${(state.emails[name]||[]).map(e=>e.subject).join('; ')||'none'}`;
+  const mRecap = (recapsFor(name)[0] || {});
+  const context = `Candidate: ${name}\nTitle: ${c.title} at ${c.company}\nStage: ${c.stage}\nNotes: ${c.notes}\n` +
+    (mRecap.text ? `Notes from their last recorded call:\n${mRecap.text.slice(0, 2000)}\n` : '') +
+    `Emails: ${(state.emails[name]||[]).map(e=>e.subject).join('; ')||'none'}`;
 
   try {
     const text = await aiCall(
@@ -4114,13 +4175,8 @@ function renderViewingCard() {
   document.querySelector('.tab').classList.add('active');
   document.getElementById('tab-notes').classList.add('active');
 
-  // The prep panel is built around a meeting, and there isn't one here.
-  document.getElementById('prep-tips').innerHTML =
-    `<div class="tip"><div class="tip-head">Viewing from search</div>` +
-    `<div class="tip-body">Looked up outside today's schedule, so there's no meeting to prep for. ` +
-    `Back to today restores the schedule view.</div></div>`;
-  const deeper = document.getElementById('deeper-btn');
-  if (deeper) deeper.style.display = 'none';
+  // Prep the person on the card, not whoever the arc last had selected.
+  generateViewingPrep(c);
 }
 
 function initSearch() {
