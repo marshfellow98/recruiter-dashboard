@@ -315,6 +315,49 @@ async function getMSToken() {
 // process happened to restart. It also meant a scope added in the Zoom
 // Marketplace never took effect on a running instance, because the old
 // scope-less token was still being handed out.
+/* Which of a notetaker's emails actually carry notes.
+
+   Otter names them plainly ("Meeting Summary for …"). Calendly sends several
+   kinds and only some are notes: a recap ("Your meeting recap is now
+   available"), an action-item digest ("There are 3 action items from …"), and a
+   booking ("A new event has been scheduled", "Updated: Tracy Huber - …"). Its
+   reminders and cancellations are not notes and would otherwise land on a
+   candidate's card as an empty recap. */
+function isRecapMail(subject) {
+  const s = String(subject || '');
+  if (/it'?s time for|reminder|remember your|cancel+ed|declined|rescheduled\b.*\?/i.test(s)) return false;
+  return /summary|notes|meeting recap|action items?|has been scheduled|^\s*updated:|^\s*new event/i.test(s);
+}
+
+/* A title for the card's recap header.
+
+   Otter puts the attendees in the subject, so it needs only tidying. Calendly
+   does not — "Your meeting recap is now available" names nobody — but its body
+   opens with the meeting line ("Dylan Ground and Shane Graham", "Group
+   Benefits Producer"), so that becomes the title. A booking names the invitee
+   in the subject before the time. */
+function recapTitle(msg, text) {
+  const subj = String(msg?.subject || '').trim();
+
+  const otter = subj.replace(/^\s*(meeting\s+summary|notes)\s+for\s+/i, '')
+                    .replace(/\s+call\s*$/i, '').trim();
+  if (/^\s*(meeting\s+summary|notes)\s+for\s+/i.test(subj)) return otter;
+
+  // "Updated: Tracy Huber - 11:00am Fri, Sep 18, 2026 - Brief Consultation"
+  const booking = subj.match(/^\s*(?:updated|new event):?\s*(.+?)\s+-\s+\d/i);
+  if (booking) return booking[1].trim();
+
+  // Calendly's generic recap subjects: the body's first line is the meeting.
+  if (/meeting recap|action items?/i.test(subj)) {
+    const first = String(text || '').split('\n').map(l => l.trim())
+      .find(l => l.length > 2 && !/^view\b|^summar/i.test(l));
+    if (first) return first.replace(/\s+and\s+Shane Graham\s*$/i, '').slice(0, 80);
+    const from = subj.match(/action items?\s+from\s+(.+)$/i);
+    if (from) return from[1].trim();
+  }
+  return subj.slice(0, 80);
+}
+
 /* "Jeff Colby, Jacob, & Mark" -> ["Jeff Colby", "Jacob", "Mark"].
    Otter names the attendees in the subject, which is what makes a recap
    attachable to a person at all. Some entries are a first name only; those are
@@ -334,7 +377,7 @@ function parseRecapPeople(title) {
 function recapText(msg) {
   const raw = msg?.body?.content || '';
   if (!raw) return String(msg?.bodyPreview || '').trim();
-  const text = raw
+  let text = raw
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<\/(p|div|tr|li|h[1-6])>/gi, '\n')
@@ -344,23 +387,35 @@ function recapText(msg) {
     .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
     .replace(/&#39;|&apos;/gi, "'").replace(/&quot;/gi, '"')
     .replace(/[ \t]+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
     .split('\n').map(l => l.trim()).filter(Boolean).join('\n');
-  // Otter appends app-store links and unsubscribe boilerplate; cut at the first
-  // marker so the card shows the summary rather than the footer.
-  const cut = text.search(/(Get the Otter|Download Otter|Unsubscribe|View in Otter|©\s*\d{4}\s*Otter)/i);
-  const body = cut > 80 ? text.slice(0, cut) : text;
+
+  /* Cut the footer, but only at a real footer. "View recording" sits ABOVE the
+     summary in Calendly's mail, so treating it as the end marker threw the
+     notes away and left the date line behind. Link lines like that are dropped
+     individually instead. */
+  const cut = text.search(/(Get the Otter|Download Otter|Unsubscribe|©\s*\d{4}\s*(Otter|Calendly)|Powered by Calendly|Manage (your )?(notification|event) (preferences|types)|calendly\.com\/app)/i);
+  if (cut > 80) text = text.slice(0, cut);
+
+  const isNoise = l =>
+    /^(view recording|view in otter|view recap|view details|join (the )?meeting|reschedule|cancel)\b/i.test(l) ||
+    // The date/time line and the attendee-email line: the card's own header
+    // already carries the date, and the addresses are not notes.
+    /^[A-Z][a-z]+day, [A-Z][a-z]+ \d{1,2}, \d{4}\s*$/.test(l) ||
+    /^\d{1,2}(:\d{2})?\s*[–-]\s*\d{1,2}(:\d{2})?\s*(am|pm)\s*\(.*\)\s*$/i.test(l) ||
+    /^[^@\s]+@[^@\s]+$/.test(l);
+
+  const kept = text.split('\n').filter(l => !isNoise(l)).join('\n').trim();
+  let body = kept.length > 60 ? kept : text.trim();
 
   /* Otter opens with "Shane Graham has shared notes from <title>, <date>",
-     which is exactly what the card's own header already says.
+     which is exactly what the card's own header says. Strip the SENTENCE, not
+     the line: Otter's HTML often carries no block breaks, so a whole recap
+     de-HTMLs to one long line and removing the first line removed the entire
+     summary. Only applied if a real summary survives it. */
+  const stripped = body.replace(/^[^.\n]*has shared notes from[^.\n]*\.\s*/i, '').trim();
+  if (stripped.length > 40) body = stripped;
 
-     Strip the SENTENCE, not the line. Otter's HTML often carries no block
-     breaks, so the whole recap de-HTMLs to one long line — and removing the
-     first line then removed the entire summary, which is why every recap came
-     back with an empty body. Only applied if a real summary survives it. */
-  const trimmed = body.trim();
-  const stripped = trimmed.replace(/^[^.\n]*has shared notes from[^.\n]*\.\s*/i, '').trim();
-  return (stripped.length > 40 ? stripped : trimmed).slice(0, 6000);
+  return body.slice(0, 6000);
 }
 
 async function getZoomToken() {
@@ -950,7 +1005,12 @@ async function handleAPI(pathname, query) {
        over another and a sort over a third. Splitting it keeps each query to
        the shape Graph reliably serves, and the date bound is dropped from the
        query entirely because the window is enforced below anyway. */
-    const senders = ['no-reply@otter.ai', 'notifications@otter.ai', 'hello@otter.ai'];
+    /* Two notetakers, because he uses two. Otter joins his Zoom calls; Calendly
+       writes its own recap and action items for anything booked through it, and
+       his first call today was on Teams with Calendly's notes and no Otter at
+       all. Reading only Otter left those calls with no notes on the card. */
+    const senders = ['no-reply@otter.ai', 'notifications@otter.ai', 'hello@otter.ai',
+                     'notifications@calendly.com', 'no-reply@calendly.com'];
     const SELECT = '$select=subject,from,receivedDateTime,bodyPreview,webLink,body';
     const ask = path => fetchJSON({
       hostname: 'graph.microsoft.com',
@@ -1030,24 +1090,34 @@ async function handleAPI(pathname, query) {
        comparison is cheaper than being wrong the same way twice. */
     const floor = Date.parse(since);
     const items = (res.body?.value || [])
-      .filter(m => /summary|notes/i.test(m.subject || ''))
+      .filter(m => isRecapMail(m.subject))
       .filter(m => {
         const t = Date.parse(m.receivedDateTime);
         return Number.isFinite(t) && t >= floor;
       })
       .map(m => {
-        const title = String(m.subject || '')
-          .replace(/^\s*(meeting\s+summary|notes)\s+for\s+/i, '')
-          .replace(/\s+call\s*$/i, '')
-          .trim();
+        let text = recapText(m);
+        const title = recapTitle(m, text);
+        // Calendly's title IS the body's first line, so the card showed it
+        // twice — once in the header and again as the opening sentence.
+        const lines = text.split('\n');
+        if (lines.length > 1 && lines[0].replace(/\s+and\s+Shane Graham\s*$/i, '').trim() === title) {
+          const rest = lines.slice(1).join('\n').trim();
+          if (rest.length > 40) text = rest;
+        }
+        const from = (m.from?.emailAddress?.address || '').toLowerCase();
         return {
           id: m.id,
           title,
           subject: m.subject,
           received: m.receivedDateTime,
           webLink: m.webLink,
+          source: from.includes('calendly') ? 'calendly' : 'otter',
+          // A booking carries what the invitee said they wanted to discuss,
+          // which is prep material; a recap is what was actually said.
+          kind: /has been scheduled|^\s*(updated|new event)\b/i.test(m.subject || '') ? 'booking' : 'recap',
           people: parseRecapPeople(title),
-          text: recapText(m)
+          text
         };
       });
 
@@ -1061,7 +1131,7 @@ async function handleAPI(pathname, query) {
     // `probes` says which query shape each sender needed and how much it
     // returned. Without it, "no recaps" and "the query matched nothing because
     // its syntax was wrong" are the same empty panel.
-    return { count: list.length, source: 'otter', days, recaps: list,
+    return { count: list.length, days, recaps: list,
              probes, raw: (res.body?.value || []).length };
   }
 
