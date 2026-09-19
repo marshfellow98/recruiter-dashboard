@@ -1848,13 +1848,18 @@ async function loadContacts() {
         if (!name) return;
         const emailArr = Array.isArray(c.email) ? c.email : (c.email ? [c.email] : []);
         const phoneArr = Array.isArray(c.phone_number) ? c.phone_number : (c.phone_number ? [c.phone_number] : []);
+        const L = (c.location && typeof c.location === 'object') ? c.location : {};
         state.contacts[name] = {
           name,
           id: c.id || null,
           title: c.current_designation || c.designation || c.title || '',
           company: c.client_company_name || c.organization || c.current_organization || c.company || '',
           email: emailArr[0] || c.email_id || '',
-          phone: phoneArr[0] || ''
+          phone: phoneArr[0] || '',
+          // Contacts are most of who he actually meets, so they carry
+          // coordinates the same way candidates do.
+          geo: c._geo || null,
+          location: L.location || [L.city, L.state].filter(Boolean).join(', ') || ''
         };
       });
       console.log(`[loadContacts] Loaded ${list.length} contacts from RecruiterFlow. First few:`, Object.keys(state.contacts).slice(0,10));
@@ -3785,7 +3790,7 @@ function focusPerson() {
   const cat = classifyMeeting(m);
   if (cat === 'personal' || cat === 'team') return null;
   const name = m.attendees?.[0] || m.title;
-  const c = findCandidate(name) || {};
+  const c = findCandidate(name) || findContact(name) || {};
   return { name, geo: c.geo || null, company: c.company || '',
            cat, idx: state.selectedIdx };
 }
@@ -3904,7 +3909,9 @@ function buildGeoMap() {
     // personal blocks and internal team time are not.
     if (cat === 'personal' || cat === 'team') return;
 
-    const c = findCandidate(name) || {};
+    // Candidate first, then the contact book — a hiring manager has a city on
+    // file just as a candidate does, and he meets more of them.
+    const c = findCandidate(name) || findContact(name) || {};
     const g = c.geo;
     if (!g || typeof g.lat !== 'number') { MAP.missing.push(name); return; }
 
@@ -3983,10 +3990,13 @@ function renderMapMeta() {
   const total = placed + MAP.missing.length;
   const approx = MAP.pins.filter(p => p.precision === 'state').length;
 
-  if (f && !f.geo) {
-    // He opened someone the map cannot place. Saying so beats silently
-    // showing him the day and looking broken.
-    meta.textContent = `No location on file for ${f.name} — showing today`;
+  if (f && !f.geo && total) {
+    /* He opened someone the map cannot place. Worth saying — but as a note
+       beside the count, not instead of it. Replacing the whole line read as
+       "this map has nothing on it" while four pins sat right there. */
+    meta.textContent = `${placed} of ${total} placed · no location for ${f.name}`;
+  } else if (f && !f.geo) {
+    meta.textContent = `No location on file for ${f.name}`;
   } else if (!total) {
     meta.textContent = 'No candidate meetings today';
   } else {
