@@ -705,6 +705,11 @@
   .geomap-firm { padding: 9px 0; border-top: 1px solid rgba(255,255,255,0.08); }
   .geomap-firm-name { font-size: 14px; font-weight: 600; color: var(--t1); }
   .geomap-firm-alias { font-size: 11px; color: var(--t4); margin-top: 2px; }
+  .geomap-firm-jobs {
+    margin-left: 8px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: #06110c; background: var(--accent);
+    padding: 2px 7px; border-radius: 999px; vertical-align: middle;
+  }
   .geomap-person {
     display: block; width: 100%; text-align: left; margin-top: 7px;
     font: inherit; color: var(--t2); background: none; border: none;
@@ -3971,9 +3976,13 @@ function buildFocusMap(f) {
       city: pl.city || '', state: pl.state || '',
       precision: pl.precision || 'city',
       rgb: arcColor('contact'),
-      count: pl.peopleCount,
+      // A client office with nobody attached still deserves a pin you can see.
+      count: Math.max(pl.peopleCount, pl.companyCount),
       sub: `${pl.companyCount} firm${pl.companyCount === 1 ? '' : 's'} · ` +
-           `${pl.peopleCount} ${pl.peopleCount === 1 ? 'person' : 'people'}`
+           (pl.peopleCount
+             ? `${pl.peopleCount} ${pl.peopleCount === 1 ? 'person' : 'people'}`
+             : 'no contacts yet') +
+           (pl.openJobs ? ` · ${pl.openJobs} open` : '')
     });
   });
 
@@ -4165,9 +4174,17 @@ function openMapDetail(place) {
        also.length ? ` · incl. ${esc(also.join(', '))}` : ''}</div>` +
     place.companies.map(co => `
       <div class="geomap-firm">
-        <div class="geomap-firm-name">${esc(co.name)}</div>
+        <div class="geomap-firm-name">${esc(co.name)}${
+          co.openJobs
+            ? `<span class="geomap-firm-jobs">${co.openJobs} open${
+                 co.jobsScope === 'firm' ? ' · firmwide' : ''}</span>`
+            : ''}</div>
         ${co.variants && co.variants.length
           ? `<div class="geomap-firm-alias">also on file as ${esc(co.variants.join(' · '))}</div>`
+          : ''}
+        ${!co.people.length
+          ? `<div class="geomap-firm-alias">Client office · no contacts on file${
+               co.domain ? ` · ${esc(co.domain)}` : ''}</div>`
           : ''}
         ${co.people.map(p => `
           <a class="geomap-person" ${p.id
