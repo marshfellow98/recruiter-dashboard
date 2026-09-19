@@ -892,11 +892,24 @@ function lookupCandidates(names) {
         // Only accept a first-name-only match when it is unambiguous.
         if (sameFirst.length === 1) hit = sameFirst[0];
       } else {
+        /* The last name has to actually match. Matching on its first letter
+           alone, and then falling back to "the first name is unique, close
+           enough", is how the calendar block "Shane Graham" became the
+           candidate Shane Gustafson of Palo Alto, and how "Focus AM" became a
+           company record filed under the first name "Focus". Both were pinned
+           on the map as real people while the three contacts he was actually
+           meeting that day showed as having no location.
+
+           A prefix is still allowed, because RecruiterFlow stuffs credentials
+           into last_name ("Soto M.A., Insurance Agent") and the calendar
+           sometimes truncates — but it has to be a prefix of the whole name,
+           not of one letter. */
         const last = parts[parts.length - 1];
-        const narrowed = sameFirst.filter(c =>
-          rfCleanLastName(c.last_name).toLowerCase().startsWith(last[0]));
+        const narrowed = sameFirst.filter(c => {
+          const cl = rfCleanLastName(c.last_name).toLowerCase();
+          return cl === last || (last.length >= 3 && cl.startsWith(last));
+        });
         if (narrowed.length === 1) hit = narrowed[0];
-        else if (sameFirst.length === 1) hit = sameFirst[0];
       }
     }
     if (hit) out[q] = { ...hit, _geo: geoForCandidate(hit) };
@@ -1441,7 +1454,14 @@ async function handleAPI(pathname, query) {
   }
 
   if (pathname === '/api/contacts') {
-    return getContacts();
+    /* Coordinates ride along, exactly as they do for candidates. Most of the
+       people actually on his calendar are contacts, not candidates — Mick
+       Rodgers, Tracy Huber and Carson Natzke were all on today's schedule and
+       all three showed as "no location on file" while the map cheerfully
+       pinned a company record called "Focus Insurance". The gazetteer already
+       places every one of them; nothing was ever asking it to. */
+    const list = await getContacts();
+    return list.map(c => ({ ...c, _geo: geoForLocation(c.location) }));
   }
 
   /* Who else is worth knowing about near this person. Takes the coordinates
