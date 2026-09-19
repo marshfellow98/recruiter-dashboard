@@ -812,12 +812,85 @@ function consolidateCompanies(people) {
   }).sort((a, b) => b.people.length - a.people.length || a.name.localeCompare(b.name));
 }
 
+/* The client companies themselves. Ryan asked whether RecruiterFlow holds
+   more firms than the map was showing, and it does: the map was inferring
+   firms from the 119 contact records, which can only ever show a company that
+   happens to have a person attached, at the city where that person lives.
+
+   /client/list is the real thing — every account on file, with its own
+   address, its web domain and its open jobs. So an office with nobody
+   attached to it yet still earns a pin, and a firm with an address of its own
+   is pinned there rather than wherever its people happen to sit. */
+const clientsCache = { data: null, expiry: 0 };
+let clientsInFlight = null;
+
+async function getClients() {
+  if (clientsCache.data && Date.now() < clientsCache.expiry) return clientsCache.data;
+  if (clientsInFlight) return clientsInFlight;
+
+  clientsInFlight = (async () => {
+    let all = [];
+    let page = 1;
+    while (page <= 100) {
+      const res = await fetchJSON({
+        hostname: 'recruiterflow.com',
+        path: `/api/external/client/list?current_page=${page}&items_per_page=100`,
+        method: 'GET',
+        headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
+      });
+      if (res.status !== 200) {
+        console.warn(`[clients] client/list returned ${res.status} — falling back to contacts alone`);
+        break;
+      }
+      const pageData = Array.isArray(res.body) ? res.body : (res.body?.data || []);
+      if (!pageData.length) break;
+      all = all.concat(pageData);
+      if (pageData.length < 100) break;
+      page++;
+    }
+    console.log(`[clients] ${all.length} client companies across ${page} page(s)`);
+    clientsCache.data = all;
+    clientsCache.expiry = Date.now() + CONTACT_TTL;
+    PLACES.builtFor = null;
+    return all;
+  })().catch(e => {
+    // A map missing its client offices still beats no map.
+    console.warn('[clients]', e.message);
+    clientsCache.data = [];
+    clientsCache.expiry = Date.now() + 60000;
+    return [];
+  }).finally(() => { clientsInFlight = null; });
+
+  return clientsInFlight;
+}
+
+function clientRecord(c) {
+  const phones = Array.isArray(c.phone_number) ? c.phone_number : (c.phone_number ? [c.phone_number] : []);
+  return {
+    id: c.id || null,
+    name: String(c.name || '').trim(),
+    domain: String(c.domain || '').trim().toLowerCase(),
+    industry: c.industry || '',
+    openJobs: Array.isArray(c.open_jobs) ? c.open_jobs.length : 0,
+    phone: phones[0] || '',
+    geo: geoForLocation(c.location)
+  };
+}
+
 async function buildPlaces() {
-  const contacts = await getContacts();
+  const [contacts, clients] = await Promise.all([getContacts(), getClients()]);
   if (PLACES.builtFor === contactsCache.expiry) return PLACES;
 
   const unplaced = [];
   const seeds = new Map();               // lat|lon|precision -> seed
+
+  const seedAt = g => {
+    const k = `${g.lat.toFixed(4)}|${g.lon.toFixed(4)}|${g.precision}`;
+    let s = seeds.get(k);
+    if (!s) seeds.set(k, s = { lat: g.lat, lon: g.lon, city: g.city, state: g.state,
+                               precision: g.precision, people: [], firms: [] });
+    return s;
+  };
 
   for (const c of contacts) {
     const g = geoForLocation(c.location);
@@ -826,18 +899,29 @@ async function buildPlaces() {
     if (!g) { unplaced.push(p); continue; }
     p.city = g.city || '';
     p.state = g.state || '';
-    const k = `${g.lat.toFixed(4)}|${g.lon.toFixed(4)}|${g.precision}`;
-    let s = seeds.get(k);
-    if (!s) seeds.set(k, s = { lat: g.lat, lon: g.lon, city: g.city, state: g.state,
-                               precision: g.precision, people: [] });
-    s.people.push(p);
+    seedAt(g).people.push(p);
+  }
+
+  // Firms with an address of their own. Those without one are not lost: their
+  // people still place them, through the loop above.
+  const firmsByKey = new Map();          // coKey -> client record, for enrichment
+  let firmsPlaced = 0;
+  for (const raw of clients) {
+    const f = clientRecord(raw);
+    if (!f.name) continue;
+    const key = coKey(f.name) || f.name.toLowerCase();
+    if (!firmsByKey.has(key)) firmsByKey.set(key, f);
+    if (!f.geo) continue;
+    seedAt(f.geo).firms.push(f);
+    firmsPlaced++;
   }
 
   /* Merge neighbouring seeds into one pin, biggest first so the anchor is the
      city he is most likely to recognise. A state-centroid seed means "somewhere
      in Illinois" — merging that into Chicago would put a name on a location we
      do not actually have, so precision levels never mix. */
-  const ordered = [...seeds.values()].sort((a, b) => b.people.length - a.people.length);
+  const ordered = [...seeds.values()]
+    .sort((a, b) => (b.people.length + b.firms.length) - (a.people.length + a.firms.length));
   const list = [];
   for (const s of ordered) {
     const host = list.find(l =>
@@ -847,26 +931,82 @@ async function buildPlaces() {
        milesBetween(l.lat, l.lon, s.lat, s.lon) <= PLACE_MERGE_MI));
     if (host) {
       host.people.push(...s.people);
+      host.firms.push(...s.firms);
       if (s.city && !host.cities.includes(s.city)) host.cities.push(s.city);
     } else {
       list.push({ id: `p${list.length}`, lat: s.lat, lon: s.lon, city: s.city, state: s.state,
-                  precision: s.precision, cities: s.city ? [s.city] : [], people: s.people });
+                  precision: s.precision, cities: s.city ? [s.city] : [],
+                  people: s.people, firms: s.firms });
     }
   }
 
   for (const l of list) {
     l.companies = consolidateCompanies(l.people);
+
+    /* Two jobs here. A firm with an office at this place and nobody attached
+       is still somewhere he can call on, so it earns an entry of its own. And
+       a firm that IS represented by people here gets what only the client
+       record knows: its domain, and how many roles are open. */
+    const byKey = new Map(l.companies.map(co => [coKey(co.name) || co.name.toLowerCase(), co]));
+    let officeJobs = 0;                 // roles at an office that is actually HERE
+    for (const f of l.firms) {
+      const key = coKey(f.name) || f.name.toLowerCase();
+      const known = byKey.get(key);
+      officeJobs += f.openJobs;
+      if (known) {
+        known.domain = known.domain || f.domain;
+        known.openJobs = f.openJobs;
+        known.jobsScope = 'office';
+        known.clientId = known.clientId || f.id;
+        if (f.name !== known.name && !known.variants.includes(f.name)) known.variants.push(f.name);
+      } else {
+        l.companies.push(byKey.set(key, {
+          name: f.name, variants: [], ids: f.id ? [f.id] : [], people: [],
+          domain: f.domain, openJobs: f.openJobs, jobsScope: 'office',
+          clientId: f.id, officeOnly: true
+        }).get(key));
+      }
+    }
+
+    /* Anything the client list knows about a firm we only heard of through a
+       contact — the domain especially, which is how an attendee with a work
+       email address can be placed at all.
+
+       Its open roles come across too, but marked as the firm's total rather
+       than this office's. Trucordia has no address of its own and people in
+       two cities; adding its four open roles to both would have the book
+       showing eight, and each pin claiming four roles in a city that may have
+       none of them. */
+    for (const co of l.companies) {
+      const f = firmsByKey.get(coKey(co.name) || co.name.toLowerCase());
+      if (!f) continue;
+      co.domain = co.domain || f.domain;
+      co.clientId = co.clientId || f.id;
+      if (co.jobsScope !== 'office' && f.openJobs) {
+        co.openJobs = f.openJobs;
+        co.jobsScope = 'firm';
+      }
+    }
+
+    l.companies.sort((a, b) => b.people.length - a.people.length ||
+                               (b.openJobs || 0) - (a.openJobs || 0) ||
+                               a.name.localeCompare(b.name));
     l.peopleCount = l.people.length;
     l.companyCount = l.companies.length;
-    // The raw per-person list would duplicate what companies[] already carries.
+    l.openJobs = officeJobs;
+    // The raw lists would duplicate what companies[] already carries.
     delete l.people;
+    delete l.firms;
   }
-  list.sort((a, b) => b.peopleCount - a.peopleCount);
+  list.sort((a, b) => (b.peopleCount + b.companyCount) - (a.peopleCount + a.companyCount));
 
   PLACES.list = list;
   PLACES.unplaced = unplaced;
+  PLACES.clients = clients.length;
+  PLACES.clientsPlaced = firmsPlaced;
   PLACES.builtFor = contactsCache.expiry;
-  console.log(`[places] ${contacts.length} contacts → ${list.length} places, ` +
+  console.log(`[places] ${contacts.length} contacts + ${clients.length} clients ` +
+              `(${firmsPlaced} with an address) → ${list.length} places, ` +
               `${list.reduce((n, l) => n + l.companyCount, 0)} firms, ${unplaced.length} unplaced`);
   return PLACES;
 }
@@ -1544,10 +1684,16 @@ async function handleAPI(pathname, query) {
   // The consolidation itself, without a location to centre it on — useful for
   // checking what merged with what.
   if (pathname === '/api/debug/places') {
-    const { list, unplaced } = await buildPlaces();
+    const P = await buildPlaces();
+    const { list, unplaced } = P;
     return {
       places: list.length,
       unplaced: unplaced.length,
+      clients: P.clients,
+      clientsWithAnAddress: P.clientsPlaced,
+      officesWithNobodyAttached: list.reduce((n, l) =>
+        n + l.companies.filter(c => c.officeOnly).length, 0),
+      openJobs: list.reduce((n, l) => n + (l.openJobs || 0), 0),
       merged: list.flatMap(l => l.companies.filter(c => c.variants.length)
         .map(c => ({ place: `${l.city || l.state}`, kept: c.name, folded: c.variants }))),
       list: list.map(l => ({
