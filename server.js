@@ -1501,6 +1501,46 @@ async function handleAPI(pathname, query) {
     };
   }
 
+  /* Does RecruiterFlow expose its Companies object, and under what path?
+     The dashboard has only ever read candidates and contacts, so the firms on
+     the map are inferred from the 119 contacts — 45 of them. RecruiterFlow's
+     own API is documented as covering companies as a first-class object, which
+     would mean client offices with no contact attached are invisible to us,
+     and that the office address we should be pinning is sitting unused.
+
+     Read-only: GET, three records a page, nothing written. It reports the
+     shape rather than the contents, so it can be run safely and the answer
+     decides what to build next. */
+  if (pathname === '/api/debug/rfpaths') {
+    const paths = [
+      'company/list', 'client/list', 'account/list', 'organization/list',
+      'companies/list', 'clients/list', 'company/search', 'client/search'
+    ];
+    const out = [];
+    for (const p of paths) {
+      const res = await fetchJSON({
+        hostname: 'recruiterflow.com',
+        path: `/api/external/${p}?current_page=1&items_per_page=3`,
+        method: 'GET',
+        headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
+      }).catch(e => ({ status: 0, body: { error: e.message } }));
+
+      const body = res.body;
+      const rows = Array.isArray(body) ? body : (body?.data || body?.value || null);
+      out.push({
+        path: p,
+        status: res.status,
+        rows: Array.isArray(rows) ? rows.length : null,
+        topLevelKeys: (body && !Array.isArray(body)) ? Object.keys(body).slice(0, 12) : null,
+        recordKeys: (Array.isArray(rows) && rows[0]) ? Object.keys(rows[0]) : null,
+        // Just enough of one record to see whether an address is in there.
+        sample: (Array.isArray(rows) && rows[0])
+          ? JSON.stringify(rows[0]).slice(0, 700) : null
+      });
+    }
+    return { tried: out.length, results: out };
+  }
+
   // The consolidation itself, without a location to centre it on — useful for
   // checking what merged with what.
   if (pathname === '/api/debug/places') {
