@@ -197,7 +197,28 @@ const contactsCache = { data: null, expiry: 0 };
 // real RecruiterFlow data first, so the moment a genuine Candidate or Contact
 // record appears for that name, the real data takes over automatically and
 // this override simply stops being consulted for that person.
-const OVERRIDES_FILE = path.join(__dirname, 'overrides.json');
+/* ── Where his typing actually lives ───────────────────────────────────────
+   Render gives a service an ephemeral filesystem: "any changes you make to a
+   service's local files are lost every time the service redeploys or
+   restarts". These two files were being written next to the code, which means
+   every deploy threw away every note on anyone without a RecruiterFlow record
+   and every label correction he had made. We deployed eight times in one day.
+
+   Three things now stand between him and that:
+     - DATA_DIR, so attaching a Render disk later is a setting rather than a
+       code change;
+     - the RecruiterFlow push, which already carried candidate notes somewhere
+       permanent and now carries contact notes too;
+     - and the browser, which keeps its own copy and offers it back when the
+       server comes up empty. That one needs no paid plan and is what actually
+       saves him today.
+   A boot line says which of these is in play, because silent data loss is the
+   kind you only discover when you needed the note. */
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+const DURABLE = !!process.env.DATA_DIR;
+const BOOT_AT = Date.now();
+
+const OVERRIDES_FILE = path.join(DATA_DIR, 'overrides.json');
 
 function loadOverrides() {
   try {
@@ -208,6 +229,7 @@ function loadOverrides() {
 }
 
 function saveOverrides(overrides) {
+  try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
   fs.writeFileSync(OVERRIDES_FILE, JSON.stringify(overrides, null, 2));
 }
 
@@ -221,7 +243,7 @@ function saveOverrides(overrides) {
 // The RecruiterFlow push is therefore best-effort and its result is reported
 // back to the UI rather than swallowed, so a failure to reach the CRM is
 // visible instead of being mistaken for a successful save.
-const NOTES_FILE = path.join(__dirname, 'notes.json');
+const NOTES_FILE = path.join(DATA_DIR, 'notes.json');
 
 function loadNotes() {
   try {
@@ -234,19 +256,24 @@ function loadNotes() {
 function saveNotes(notes) {
   // Write to a temp file and rename, so an interrupted write can't leave a
   // truncated notes.json behind and lose everything he has typed.
+  try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
   const tmp = NOTES_FILE + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(notes, null, 2));
   fs.renameSync(tmp, NOTES_FILE);
 }
 
-async function pushNoteToRecruiterFlow(id, text) {
+/* `kind` says which list the id belongs to. Contact notes used to go nowhere
+   but the local file — so a note about a hiring manager was exactly the note
+   most likely to be lost on the next deploy, since contacts are most of who he
+   meets. */
+async function pushNoteToRecruiterFlow(id, text, kind = 'candidate') {
   if (!id) return { attempted: false, reason: 'no RecruiterFlow id on this record' };
   if (!CONFIG.recruiterflow.apiKey) return { attempted: false, reason: 'no API key configured' };
   const payload = JSON.stringify({ id: Number(id) || id, notes: [text] });
   try {
     const res = await fetchJSON({
       hostname: 'recruiterflow.com',
-      path: '/api/external/candidate/update',
+      path: kind === 'contact' ? '/api/external/contact/update' : '/api/external/candidate/update',
       method: 'POST',
       headers: {
         'rf-api-key': CONFIG.recruiterflow.apiKey,
@@ -1503,7 +1530,7 @@ async function handleAPI(pathname, query) {
         hostname: 'graph.microsoft.com',
         path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView` +
               `?startDateTime=${win.start}&endDateTime=${win.end}` +
-              `&$select=subject,start,end,bodyPreview,onlineMeeting,attendees` +
+              `&$select=subject,start,end,bodyPreview,onlineMeeting,attendees,isAllDay` +
               `&$orderby=start/dateTime&$top=400`,
         method: 'GET',
         /* Deliberately NOT asking Graph for local times. The browser has
@@ -1516,15 +1543,20 @@ async function handleAPI(pathname, query) {
 
       const days = {};
       for (const k of keys) days[k] = [];
-      let dropped = 0;
+      let dropped = 0, allDay = 0;
       for (const e of (res.body?.value || [])) {
+        /* All-day items — birthdays, out-of-office, anniversaries — start at
+           midnight, so on an arc that maps time of day they pile up at one end
+           and say nothing about when he is busy. Counted, not drawn. */
+        if (e.isAllDay) { allDay++; continue; }
         const k = bizDateOf(e.start?.dateTime, e.start?.timeZone);
         if (days[k]) days[k].push(e); else dropped++;
       }
       console.log(`[calendar] ${keys.length} day(s) from ${keys[0]}: ` +
                   `${(res.body?.value || []).length} events` +
+                  (allDay ? `, ${allDay} all-day skipped` : '') +
                   (dropped ? `, ${dropped} outside the window` : ''));
-      return { tz: BIZ_TZ, from: keys[0], to: keys[keys.length - 1],
+      return { tz: BIZ_TZ, from: keys[0], to: keys[keys.length - 1], allDay,
                days, counts: Object.fromEntries(keys.map(k => [k, days[k].length])) };
     }
 
@@ -2373,6 +2405,64 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Is anything he types going to survive the next deploy, and how much is
+  // here right now. The browser uses this to decide whether to offer its copy.
+  if (pathname === '/api/storage') {
+    // This sits in the raw request handler, not handleAPI, so it writes its
+    // own response — returning an object here just hangs the request.
+    const notes = loadNotes(), overrides = loadOverrides();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      durable: DURABLE,
+      where: DURABLE ? DATA_DIR : 'the service filesystem, which is wiped on every deploy',
+      notes: Object.keys(notes).length,
+      overrides: Object.keys(overrides).length,
+      startedAt: new Date(BOOT_AT).toISOString()
+    }));
+    return;
+  }
+
+  /* The browser handing back what the server lost. Only entries the server
+     does not already have are taken, and only ones the browser did not record
+     as deliberately cleared — otherwise a note he deleted would rise from the
+     dead on the next deploy. */
+  if (pathname === '/api/restore' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const notes = loadNotes();
+      const overrides = loadOverrides();
+      const cleared = new Set(Array.isArray(body.cleared) ? body.cleared : []);
+      const added = [];
+
+      for (const [name, rec] of Object.entries(body.notes || {})) {
+        if (notes[name] || cleared.has(name)) continue;
+        if (!rec || typeof rec.text !== 'string' || !rec.text.trim()) continue;
+        notes[name] = { ...rec, restored: new Date().toISOString() };
+        added.push(name);
+      }
+      const addedOverrides = [];
+      for (const [name, label] of Object.entries(body.overrides || {})) {
+        if (overrides[name] || cleared.has(name)) continue;
+        overrides[name] = label;
+        addedOverrides.push(name);
+      }
+
+      if (added.length) saveNotes(notes);
+      if (addedOverrides.length) saveOverrides(overrides);
+      if (added.length || addedOverrides.length) {
+        console.log(`[restore] took back ${added.length} note(s) and ` +
+                    `${addedOverrides.length} label(s) from the browser: ` +
+                    [...added, ...addedOverrides].join(', '));
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, notes: added, overrides: addedOverrides }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
   /* Place a call. RingOut rings HIS phone first and connects the other party
      only once he picks up, so nothing dials out on a stray click and he is
      never the one left holding a ringing line. The dashboard asks him to
@@ -2438,6 +2528,7 @@ const server = http.createServer(async (req, res) => {
       const name = String(body.name || '').trim();
       const text = String(body.text == null ? '' : body.text);
       const id = body.id || null;
+      const kind = body.kind === 'contact' ? 'contact' : 'candidate';
       if (!name) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'name is required' }));
@@ -2454,7 +2545,8 @@ const server = http.createServer(async (req, res) => {
       }
       saveNotes(notes);
 
-      const rf = text.trim() ? await pushNoteToRecruiterFlow(id, text) : { attempted: false, reason: 'note cleared' };
+      const rf = text.trim() ? await pushNoteToRecruiterFlow(id, text, kind)
+                             : { attempted: false, reason: 'note cleared' };
       console.log(`[notes] saved "${name}" locally; RecruiterFlow: ${rf.attempted ? (rf.ok ? 'ok' : 'failed ' + (rf.status || rf.error)) : 'skipped — ' + rf.reason}`);
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -2492,6 +2584,11 @@ const server = http.createServer(async (req, res) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`\n✦ Recruiter Dashboard v3 running on port ${PORT}`);
+  console.log(DURABLE
+    ? `[storage] notes and labels kept in ${DATA_DIR} — survives deploys`
+    : '[storage] notes and labels are on the service filesystem, which Render wipes ' +
+      'on every deploy. The browser keeps a copy and offers it back; set DATA_DIR to ' +
+      'a mounted disk to make the server side durable too.');
   console.log('Routes: GET /, GET /api/calendar, GET /api/calendar/tomorrow, GET /api/emails, GET /api/candidates, GET /api/calls, GET /api/zoom, POST /api/ai\n');
 });
 
