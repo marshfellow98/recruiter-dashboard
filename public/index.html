@@ -38,7 +38,7 @@
     opacity: 0.035; mix-blend-mode: overlay;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
-  .shell, .topbar, .day-toggle, .tomorrow-banner, .news-section, .schedule-strip, .layout, .modal-wrap, .alert-overlay { position: relative; z-index: 1; }
+  .shell, .topbar, .day-strip, .tomorrow-banner, .news-section, .schedule-strip, .layout, .modal-wrap, .alert-overlay { position: relative; z-index: 1; }
 
   /* Entrance animation for the whole dashboard on load */
   .shell-fade-in { animation: shellFadeIn 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
@@ -119,6 +119,34 @@
   @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
 
   /* Day toggle */
+  /* ── The week strip ───────────────────────────────────────────────────── */
+  .day-strip {
+    display: flex; gap: 6px; margin-bottom: 16px; width: fit-content; max-width: 100%;
+    background: #0f0f0f; border-radius: 14px; padding: 5px; overflow-x: auto;
+  }
+  .day-chip {
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+    min-width: 58px; padding: 7px 10px 6px; border: none; border-radius: 11px;
+    background: none; color: var(--t3); cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .day-chip:hover { background: rgba(255,255,255,0.06); color: var(--t1); }
+  .day-chip-dow {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.1em; opacity: 0.8;
+  }
+  .day-chip-num { font-size: 17px; font-weight: 700; line-height: 1.1; }
+  .day-chip-count {
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; opacity: 0.62;
+  }
+  .day-chip.weekend { color: var(--t4); }
+  .day-chip.today .day-chip-dow { color: var(--accent); opacity: 1; }
+  .day-chip.on {
+    background: linear-gradient(135deg, #dfe6ee, #c9d2de 40%, #8b98ab);
+    color: #0a1428; box-shadow: 0 2px 12px rgba(201,210,222,0.25);
+  }
+  .day-chip.on .day-chip-dow,
+  .day-chip.on .day-chip-count { opacity: 0.72; color: #0a1428; }
   .day-toggle { display: flex; background: #0f0f0f; border-radius: 12px; padding: 4px; gap: 3px; margin-bottom: 16px; width: fit-content; }
   .day-btn { padding: 10px 24px; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: none; color: #444; font-family: 'Inter', sans-serif; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); letter-spacing: 0.03em; }
   .day-btn.active { background: linear-gradient(135deg, #dfe6ee, #c9d2de 40%, #8b98ab); color: #0a1428; box-shadow: 0 2px 12px rgba(201,210,222,0.25); }
@@ -418,13 +446,13 @@
      ambient wash. Anything nested inside an already-opaque card gets the
      translucent fill and specular edge but no blur, because blurring an
      opaque parent costs GPU time and changes nothing on screen. */
-  .weather-chip, .next-up, .day-toggle, .news-card, .sched-item,
+  .weather-chip, .next-up, .day-strip, .news-card, .sched-item,
   .main-card, .ai-card, .pipe-card, .modal, .tabs, .dayarc {
     -webkit-backdrop-filter: blur(var(--blur)) saturate(165%);
             backdrop-filter: blur(var(--blur)) saturate(165%);
   }
 
-  .weather-chip, .next-up, .day-toggle, .news-card, .sched-item,
+  .weather-chip, .next-up, .day-strip, .news-card, .sched-item,
   .main-card, .ai-card, .pipe-card, .modal, .tabs, .dayarc,
   .info-cell, .email-item, .call-item, .tomorrow-banner {
     position: relative;
@@ -718,6 +746,42 @@
   .geomap-person:hover .geomap-person-name { color: var(--accent); }
   .geomap-person-name { font-size: 13.5px; font-weight: 600; color: var(--t2); }
   .geomap-person-role { font-size: 12px; color: var(--t4); }
+  /* ── Calling a contact from the map ───────────────────────────────────── */
+  .geomap-person-row {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 7px;
+  }
+  .geomap-person-row .geomap-person { flex: 1 1 auto; margin-top: 0; width: auto; }
+  .geomap-person-acts { display: flex; align-items: center; gap: 4px; }
+  .geomap-act {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 9px; font-size: 14px; line-height: 1;
+    color: var(--t3); background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1); cursor: pointer; text-decoration: none;
+    transition: all 0.15s ease;
+  }
+  .geomap-act:hover { color: var(--t1); background: rgba(255,255,255,0.13); }
+  .geomap-act.call:hover { color: #06110c; background: var(--accent); border-color: transparent; }
+  .geomap-call-ask {
+    flex: 1 1 100%; display: flex; flex-direction: column; gap: 5px;
+    margin: 6px 0 2px; padding: 9px 10px; border-radius: 12px;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.11);
+  }
+  .geomap-call-who { font-size: 12px; font-weight: 600; color: var(--t2); }
+  .geomap-call-note { font-weight: 500; color: var(--t4); }
+  .geomap-call-num {
+    display: flex; flex-direction: column; gap: 1px; align-items: flex-start;
+    font: inherit; text-align: left;
+    color: #06110c; background: var(--accent); border: none; border-radius: 9px;
+    padding: 8px 11px; cursor: pointer;
+  }
+  .geomap-call-digits { font-size: 14px; font-weight: 700; letter-spacing: 0.01em; }
+  .geomap-call-how { font-size: 10.5px; font-weight: 600; opacity: 0.72; }
+  .geomap-call-num:disabled { opacity: 0.75; cursor: default; }
+  .geomap-call-cancel {
+    font: inherit; font-size: 12px; color: var(--t4);
+    background: none; border: none; padding: 2px; cursor: pointer; text-align: left;
+  }
+  .geomap-call-cancel:hover { color: var(--t2); }
   @media (max-width: 1100px) { .geomap { height: 380px; } }
   /* ── Candidate search ─────────────────────────────────────────────────── */
   /* The topbar is a stacking context (position:relative + z-index:1 in the base
@@ -971,8 +1035,9 @@
     .geomap-detail-sub { letter-spacing: 0.04em; }
 
     /* Full-width day toggle with real touch targets. */
-    .day-toggle { width: 100%; }
-    .day-btn { flex: 1; padding: 14px 10px; font-size: 15px; }
+    .day-strip { width: 100%; }
+    .day-chip { flex: 1 0 auto; min-width: 52px; padding: 9px 8px 8px; }
+    .day-chip-num { font-size: 19px; }
 
     /* Schedule cards stack instead of scrolling sideways — a horizontal strip
        hides most of the day behind a swipe. */
@@ -1010,7 +1075,7 @@
     input[type="text"], input[type="search"], input[type="password"], textarea {
       font-size: 16px;
     }
-    .day-btn      { padding: 13px 18px; min-height: 46px; }
+    .day-chip     { min-height: 58px; }
     .contact-btn  { padding: 13px 16px; min-height: 46px; }
     .tab          { min-height: 46px; }
     .search-row   { min-height: 46px; }
@@ -1020,6 +1085,8 @@
     .geomap-range { min-height: 40px; padding: 9px 14px; }
     .geomap-today { min-height: 40px; padding: 9px 14px; }
     .geomap-person { min-height: 40px; }
+    .geomap-act { width: 40px; height: 40px; font-size: 16px; }
+    .geomap-call-num { min-height: 44px; }
     .dayarc-hint  { display: none; }               /* no hover, no drag hint */
   }
 
@@ -1102,10 +1169,9 @@
 </div>
 
 <!-- Day toggle -->
-<div class="day-toggle">
-  <button class="day-btn active" id="btn-today" onclick="switchDay('today')">Today</button>
-  <button class="day-btn tomorrow" id="btn-tomorrow" onclick="switchDay('tomorrow')">Tomorrow</button>
-</div>
+<!-- A week at a glance: one chip per day, carrying how many meetings are on it.
+     Replaces the Today/Tomorrow pair. -->
+<div class="day-strip" id="day-strip"></div>
 
 <div class="tomorrow-banner" id="tomorrow-banner">
   Planning ahead — <strong id="tomorrow-label"></strong> · Read-only preview
@@ -1230,10 +1296,64 @@ const state = {
   callsStatus: {},
   pipeline: [],
   selectedIdx: 0,
-  currentDay: 'today',
+  days: {},           // 'YYYY-MM-DD' -> meetings, a week at a time
+  currentDate: null,  // which of them he is looking at; set at boot
   viewing: null,      // candidate opened from search; overrides the meeting card
   localNotes: {}      // notes typed in the dashboard, keyed by candidate name
 };
+
+/* ── A week instead of two days ────────────────────────────────────────────
+   The schedule used to live in two fields, todayMeetings and tomorrowMeetings,
+   and about forty-five places around the file read them or asked whether the
+   current day was 'tomorrow'. Rather than rewrite all of that — and risk the
+   parts none of the tests reach — the store became a map keyed by date and the
+   old names are kept as windows onto it. Everything that said "tomorrow"
+   therefore still means "a day that is not today", which is exactly the
+   distinction it was drawing. */
+const BIZ_TZ = 'America/Chicago';
+
+function dateKey(d = new Date()) {
+  // en-CA formats as YYYY-MM-DD, which is what the server speaks.
+  return d.toLocaleDateString('en-CA', { timeZone: BIZ_TZ });
+}
+function todayKey() { return dateKey(); }
+function shiftKey(key, n) {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+function keyToDate(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d, 12);     // midday: never ambiguous
+}
+function isToday(key = state.currentDate) { return key === todayKey(); }
+
+// "Today", "Tomorrow", then the weekday, then the date once that stops helping.
+function dayLabel(key) {
+  if (key === todayKey()) return 'Today';
+  if (key === shiftKey(todayKey(), 1)) return 'Tomorrow';
+  const d = keyToDate(key);
+  const ahead = Math.round((keyToDate(key) - keyToDate(todayKey())) / 86400000);
+  return ahead > 0 && ahead < 7
+    ? d.toLocaleDateString('en-US', { weekday: 'long' })
+    : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+Object.defineProperties(state, {
+  todayMeetings: {
+    get() { return this.days[todayKey()] || []; },
+    set(v) { this.days[todayKey()] = v; }
+  },
+  tomorrowMeetings: {
+    get() { return this.days[shiftKey(todayKey(), 1)] || []; },
+    set(v) { this.days[shiftKey(todayKey(), 1)] = v; }
+  },
+  // Read by the alert loop, the card styling and the prep wording, all of
+  // which only care whether what he is looking at is live or ahead of him.
+  currentDay: {
+    get() { return isToday(this.currentDate) ? 'today' : 'tomorrow'; }
+  }
+});
+state.currentDate = todayKey();
 
 function fmtDate(date) {
   return date.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
@@ -1250,7 +1370,7 @@ function setSync(live) {
   dot.className = 'sync-dot' + (live ? '' : ' loading');
 }
 function activeMeetings() {
-  return state.currentDay === 'today' ? state.todayMeetings : state.tomorrowMeetings;
+  return state.days[state.currentDate] || [];
 }
 
 // Look up a candidate by exact name, falling back to a fuzzy first-name+last-name-prefix match
@@ -1731,6 +1851,23 @@ async function loadCalendar() {
   useDemoMeetings();
 }
 
+/* The whole week in one request. Each day keeps its own list, so moving
+   between them is instant and the strip can show counts without asking again. */
+const WEEK_DAYS = 7;
+
+async function loadWeek() {
+  const data = await apiFetch(`/api/calendar?days=${WEEK_DAYS}`);
+  if (!data || !data.days) throw new Error('no days returned');
+  let total = 0;
+  for (const [key, events] of Object.entries(data.days)) {
+    state.days[key] = events.map(mapMeeting);
+    total += events.length;
+  }
+  if (!state.days[state.currentDate]) state.days[state.currentDate] = [];
+  renderDayStrip();
+  return total;
+}
+
 async function loadTomorrowCalendar() {
   try {
     const data = await apiFetch('/api/calendar/tomorrow');
@@ -1752,9 +1889,9 @@ function mapMeeting(e) {
   };
 }
 
-// Every name on the schedule, today and tomorrow, deduped.
+// Every name on the schedule across every day loaded, deduped.
 function meetingNames() {
-  const all = [...state.todayMeetings, ...state.tomorrowMeetings]
+  const all = Object.values(state.days).flat()
     .map(m => m.attendees?.[0] || m.title)
     .filter(Boolean);
   return [...new Set(all)];
@@ -1983,27 +2120,72 @@ function useDemoCandidates() {
 }
 
 // ── Day toggle ────────────────────────────────
-function switchDay(day) {
-  state.currentDay = day;
+/* The week strip. One button per day with the number of meetings on it, so
+   "when is he actually free" is answerable at a glance rather than by stepping
+   through days one at a time. */
+function renderDayStrip() {
+  const strip = document.getElementById('day-strip');
+  if (!strip) return;
+  const today = todayKey();
+  const keys = Array.from({ length: WEEK_DAYS }, (_, i) => shiftKey(today, i));
+
+  strip.innerHTML = keys.map(k => {
+    const d = keyToDate(k);
+    const n = (state.days[k] || []).length;
+    const real = (state.days[k] || []).filter(m => {
+      const cat = classifyMeeting(m);
+      return cat !== 'personal' && cat !== 'team';
+    }).length;
+    const weekend = d.getDay() === 0 || d.getDay() === 6;
+    return `<button type="button" class="day-chip${k === state.currentDate ? ' on' : ''}` +
+           `${k === today ? ' today' : ''}${weekend ? ' weekend' : ''}" data-day="${k}">
+        <span class="day-chip-dow">${k === today ? 'TODAY'
+          : d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}</span>
+        <span class="day-chip-num">${d.getDate()}</span>
+        <span class="day-chip-count">${n ? `${real || n}${real && real !== n ? '' : ''}` : '—'}</span>
+      </button>`;
+  }).join('');
+
+  strip.querySelectorAll('.day-chip').forEach(b =>
+    b.addEventListener('click', () => selectDate(b.dataset.day)));
+}
+
+function selectDate(key) {
+  if (!key || key === state.currentDate) return;
+  state.currentDate = key;
   state.selectedIdx = 0;
-  document.getElementById('btn-today').className = 'day-btn' + (day==='today'?' active':'');
-  document.getElementById('btn-tomorrow').className = 'day-btn tomorrow' + (day==='tomorrow'?' active':'');
+  state.viewing = null;              // a day is a different question from a person
+
   const banner = document.getElementById('tomorrow-banner');
-  banner.className = 'tomorrow-banner' + (day==='tomorrow'?' visible':'');
-  if (day==='tomorrow') {
-    const t = new Date(); t.setDate(t.getDate()+1);
-    document.getElementById('tomorrow-label').textContent = t.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
-    // Tomorrow's attendees haven't been resolved yet, so fetch them too.
-    if (!state.tomorrowMeetings.length) {
-      loadTomorrowCalendar()
-        .then(() => loadCandidates())
-        .then(() => { renderSchedule(); renderCard(); generatePrep(); });
-    }
+  if (banner) {
+    banner.className = 'tomorrow-banner' + (isToday(key) ? '' : ' visible');
+    const label = document.getElementById('tomorrow-label');
+    if (label) label.textContent = keyToDate(key)
+      .toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   }
-  renderSchedule();
-  renderCard();
+
+  renderDayStrip();
+  withSteadyMap(() => { renderSchedule(); renderCard(); });
   generatePrep();
   updateNextUp();
+  // The map follows the day: today shows where the day is, another day shows
+  // where that day will be.
+  NEARBY.focus = null; NEARBY.key = null;
+  closeMapDetail();
+  buildGeoMap();
+
+  // Anyone new to this day still needs their record and their history.
+  const names = (state.days[key] || []).map(m => m.attendees?.[0] || m.title).filter(Boolean);
+  if (names.some(n => !state.candidates[n] && !state.contacts[n])) {
+    loadCandidates().then(() => { renderSchedule(); renderCard(); generatePrep(); }).catch(() => {});
+    Promise.all(names.flatMap(n => [loadEmails(n), loadCalls(n)]))
+      .then(() => renderCard()).catch(() => {});
+  }
+}
+
+// Kept for the old two-button toggle and anything that still calls it.
+function switchDay(day) {
+  selectDate(day === 'tomorrow' ? shiftKey(todayKey(), 1) : todayKey());
 }
 
 // ── Render schedule ───────────────────────────
@@ -2012,9 +2194,13 @@ function renderSchedule() {
   const meetings = activeMeetings();
   const isTomorrow = state.currentDay === 'tomorrow';
 
+  /* "Today — Thursday, October 1, 2026" for today and tomorrow; further out
+     the weekday is already in the date, so the prefix would only repeat it. */
+  const full = keyToDate(state.currentDate).toLocaleDateString('en-US',
+    { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+  const lbl = dayLabel(state.currentDate);
   document.getElementById('today-date').textContent =
-    (isTomorrow ? 'Tomorrow — ' : 'Today — ') +
-    new Date(isTomorrow ? Date.now()+86400000 : Date.now()).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+    (lbl === 'Today' || lbl === 'Tomorrow') ? `${lbl} — ${full}` : full;
 
   const strip = document.getElementById('schedule-strip');
   if (!meetings.length) {
@@ -2313,7 +2499,7 @@ This person is not in RecruiterFlow — treat as a general contact, not a recrui
 Recent emails:
 ${emailContext}
 Calls logged: ${(state.calls[name]||[]).length}
-${isTomorrow?'This meeting is TOMORROW — focus on advance preparation.':''}`
+${isTomorrow?`This meeting is ${dayLabel(state.currentDate).toUpperCase()}, not today — focus on advance preparation.`:''}`
     : `Candidate: ${name}
 Title: ${c.title} at ${c.company}
 Stage: ${c.stage}
@@ -2323,7 +2509,7 @@ Notes: ${c.notes}
 Recent emails:
 ${emailContext}
 Calls logged: ${(state.calls[name]||[]).length}
-${isTomorrow?'This call is TOMORROW — focus on advance preparation.':''}`;
+${isTomorrow?`This call is ${dayLabel(state.currentDate).toUpperCase()}, not today — focus on advance preparation.`:''}`;
 
   const systemPrompt = category === 'contact'
     ? 'You are a helpful assistant recapping context for an upcoming meeting with a professional contact (not a recruiting candidate). Read the email content carefully for relevant business context, open items, or personal details that would help build rapport. Return ONLY a JSON array of exactly 3 objects with keys "head" (3-5 word title) and "body" (1-2 sentences, specific and actionable). Base insights directly on the email content when available; if there is none, keep tips general and brief. No markdown, no preamble, raw JSON only.'
@@ -2332,7 +2518,7 @@ ${isTomorrow?'This call is TOMORROW — focus on advance preparation.':''}`;
   return runPrep({
     title: category === 'contact'
       ? `Contact · ${name.split(' ')[0]}`
-      : `${isTomorrow ? 'Tomorrow Prep' : 'AI Prep'} · ${name.split(' ')[0]}`,
+      : `${isTomorrow ? dayLabel(state.currentDate) + ' Prep' : 'AI Prep'} · ${name.split(' ')[0]}`,
     systemPrompt,
     context,
     allowDeeper: true
@@ -4186,17 +4372,112 @@ function openMapDetail(place) {
           ? `<div class="geomap-firm-alias">Client office · no contacts on file${
                co.domain ? ` · ${esc(co.domain)}` : ''}</div>`
           : ''}
-        ${co.people.map(p => `
-          <a class="geomap-person" ${p.id
-              ? `href="https://recruiterflow.com/contacts/${esc(p.id)}" target="_blank" rel="noopener"`
-              : ''}>
-            <span class="geomap-person-name">${esc(p.name)}</span>
-            ${p.title ? `<span class="geomap-person-role"> · ${esc(p.title)}</span>` : ''}
-          </a>`).join('')}
+        ${co.people.map((p, pi) => {
+          const nums = (p.phones && p.phones.length ? p.phones : (p.phone ? [p.phone] : []));
+          return `
+          <div class="geomap-person-row">
+            <div class="geomap-person">
+              <span class="geomap-person-name">${esc(p.name)}</span>
+              ${p.title ? `<span class="geomap-person-role"> · ${esc(p.title)}</span>` : ''}
+            </div>
+            <div class="geomap-person-acts">
+              ${nums.length
+                ? `<button type="button" class="geomap-act call" data-call="${esc(p.name)}"
+                     data-nums="${esc(nums.join(','))}" title="Call ${esc(p.name)}">✆</button>`
+                : ''}
+              ${p.email ? `<a class="geomap-act" href="mailto:${esc(p.email)}" title="Email ${esc(p.name)}">✉</a>` : ''}
+              ${p.id ? `<a class="geomap-act" href="https://recruiterflow.com/contacts/${esc(p.id)}"
+                    target="_blank" rel="noopener" title="Open in RecruiterFlow">↗</a>` : ''}
+            </div>
+          </div>`;
+        }).join('')}
       </div>`).join('');
 
   el.querySelector('.geomap-detail-close').addEventListener('click', closeMapDetail);
+  el.querySelectorAll('[data-call]').forEach(b => {
+    b.addEventListener('click', () => askToCall(b, b.dataset.call, b.dataset.nums.split(',')));
+  });
   el.classList.add('open');
+}
+
+/* ── Calling from the map ──────────────────────────────────────────────────
+   RingOut rings HIS phone first and only dials the other party once he picks
+   up, so the call goes out on his own number and lands in the RingCentral log
+   like any other. Where that is not available the number is handed to
+   whatever dialler the machine has, through a plain tel: link.
+
+   Either way it takes two taps. A single tap that silently dials a client is
+   the kind of thing you only get wrong once. */
+const CALL = { can: null, from: null, reason: null };
+
+async function callStatus() {
+  if (CALL.can !== null) return CALL;
+  try {
+    const d = await apiFetch('/api/call/status');
+    CALL.can = !!d.ringOut; CALL.from = d.from || null; CALL.reason = d.reason || null;
+  } catch (e) { CALL.can = false; CALL.reason = e.message; }
+  return CALL;
+}
+
+function prettyPhone(n) {
+  const d = String(n || '').replace(/\D/g, '');
+  const ten = d.length === 11 && d[0] === '1' ? d.slice(1) : d;
+  return ten.length === 10
+    ? `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}`
+    : String(n || '');
+}
+
+async function askToCall(btn, name, nums) {
+  const row = btn.closest('.geomap-person-row');
+  if (!row) return;
+  const open = row.querySelector('.geomap-call-ask');
+  if (open) { open.remove(); return; }              // a second tap closes it
+
+  const st = await callStatus();
+  const box = document.createElement('div');
+  box.className = 'geomap-call-ask';
+  box.innerHTML =
+    `<div class="geomap-call-who">Call ${esc(name)}${
+       st.can ? '' : ' <span class="geomap-call-note">· opens your dialler</span>'}</div>` +
+    nums.map(n => `<button type="button" class="geomap-call-num" data-n="${esc(n)}">
+        <span class="geomap-call-digits">✆ ${esc(prettyPhone(n))}</span>
+        <span class="geomap-call-how">${st.can ? 'rings your phone first' : 'opens your dialler'}</span>
+      </button>`).join('') +
+    `<button type="button" class="geomap-call-cancel">Cancel</button>`;
+  row.appendChild(box);
+  // The panel scrolls; an ask that opens below the fold looks like nothing
+  // happened, and the second tap is the one that matters.
+  box.scrollIntoView({ block: 'nearest' });
+
+  box.querySelector('.geomap-call-cancel').addEventListener('click', () => box.remove());
+  box.querySelectorAll('.geomap-call-num').forEach(b => {
+    b.addEventListener('click', async () => {
+      const n = b.dataset.n;
+      if (!st.can) { window.location.href = 'tel:' + n; box.remove(); return; }
+      b.disabled = true;
+      b.textContent = '✆ Ringing your phone…';
+      try {
+        /* Deliberately not apiFetch: that retries twice on failure, and a
+           retried call request is a second phone call. This one gets one
+           attempt and reports what happened. */
+        const res = await fetch('/api/call', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: n, name })
+        });
+        const r = await res.json().catch(() => ({}));
+        if (res.ok && r && r.ok) {
+          b.textContent = '✆ Pick up to connect';
+          setTimeout(() => box.remove(), 3500);
+        } else throw new Error((r && r.error) || 'call failed');
+      } catch (e) {
+        // Whatever went wrong, he still has a number and a dialler.
+        b.disabled = false;
+        b.textContent = `✆ Couldn't ring — open dialler for ${prettyPhone(n)}`;
+        b.onclick = () => { window.location.href = 'tel:' + n; };
+      }
+    });
+  });
 }
 
 function mapHitTest(mx, my) {
@@ -5011,7 +5292,18 @@ async function loadAll() {
      candidate lookup triggers a full RecruiterFlow crawl — and since every
      deploy restarts the process, that meant the dashboard sat blank for the
      better part of a minute after each one. The schedule needs none of that. */
-  await loadCalendar();
+  /* The whole week arrives in one request, so the strip can show counts and
+     stepping between days costs nothing. If that fails for any reason the old
+     single-day path still answers, and the dashboard is merely back to where
+     it was this morning rather than blank. */
+  try {
+    const n = await loadWeek();
+    if (!n) useDemoMeetings();
+  } catch (e) {
+    console.warn('Week calendar:', e.message);
+    await loadCalendar();
+  }
+  renderDayStrip();
 
   const now = new Date();
   const next = state.todayMeetings.findIndex(m => parseGraphDate(m.start) >= now);
@@ -5031,9 +5323,9 @@ async function loadAll() {
   // RecruiterFlow work, which may be slow on a cold cache. Each re-renders as
   // it lands rather than holding the page hostage.
   const candidatesDone = loadCandidates()
-    .then(() => { renderSchedule(); renderCard(); generatePrep(); })
+    .then(() => { renderSchedule(); renderCard(); renderDayStrip(); generatePrep(); })
     .catch(() => {});
-  loadContacts().then(() => { renderSchedule(); renderCard(); }).catch(() => {});
+  loadContacts().then(() => { renderSchedule(); renderCard(); renderDayStrip(); }).catch(() => {});
 
   // Email and call history for whoever is on the schedule.
   const names = meetingNames();
