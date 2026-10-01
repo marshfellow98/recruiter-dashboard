@@ -119,6 +119,47 @@
   @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
 
   /* Day toggle */
+  /* ── Topbar tools: text size and the spoken brief ─────────────────────── */
+  .tool-btn {
+    font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600;
+    letter-spacing: 0.05em; color: #a8b2bf; background: rgba(22,24,30,0.82);
+    border: 1px solid rgba(255,255,255,0.14); border-radius: 10px;
+    padding: 8px 14px; cursor: pointer; transition: all 0.16s ease;
+  }
+  .tool-btn:hover { color: var(--t1); border-color: rgba(255,255,255,0.3); }
+  .tool-btn sup { font-size: 9px; }
+  .tool-btn.speak.on { color: #06110c; background: var(--accent); border-color: transparent; }
+
+  /* ── "Read my day" ─────────────────────────────────────────────────────── */
+  .speak-overlay {
+    position: fixed; inset: 0; z-index: 320; display: none;
+    align-items: center; justify-content: center;
+    background: radial-gradient(900px circle at 50% 42%, rgba(0,208,132,0.09), transparent 60%),
+                rgba(4,5,7,0.93);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  }
+  .speak-overlay.show { display: flex; }
+  .speak-stage { display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 24px; }
+  #speak-canvas { width: 340px; height: 340px; }
+  .speak-line {
+    max-width: 760px; min-height: 2.4em; text-align: center;
+    font-size: 30px; font-weight: 600; line-height: 1.35; color: var(--t1);
+    text-wrap: balance;
+  }
+  .speak-controls { display: flex; align-items: center; gap: 14px; }
+  .speak-ctl {
+    font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 600;
+    color: var(--t2); background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.16); border-radius: 999px;
+    padding: 11px 22px; cursor: pointer;
+  }
+  .speak-ctl:hover { color: var(--t1); background: rgba(255,255,255,0.13); }
+  .speak-hint { font-size: 12px; color: var(--t4); letter-spacing: 0.05em; }
+  @media (max-width: 760px) {
+    #speak-canvas { width: 240px; height: 240px; }
+    .speak-line { font-size: 23px; }
+  }
+
   /* ── The week strip ───────────────────────────────────────────────────── */
   .day-strip {
     display: flex; gap: 6px; margin-bottom: 16px; width: fit-content; max-width: 100%;
@@ -1151,7 +1192,25 @@
       <div class="next-up-countdown" id="next-up-countdown">—</div>
     </div>
     <div class="sync-dot loading" id="sync-dot"></div>
+    <!-- Text size, for eyes that want it bigger. Cycles rather than stepping,
+         so it is one target to find and one target to press. -->
+    <button class="tool-btn" id="text-size-btn" title="Make everything bigger">A<sup>+</sup></button>
+    <button class="tool-btn speak" id="speak-btn" title="Read today out loud">◉ Read my day</button>
     <button class="refresh-btn" onclick="loadAll()" style="background:rgba(22,24,30,0.82);border:1px solid rgba(255,255,255,0.14);color:#a8b2bf;border-radius:10px;padding:8px 16px;font-size:12px;font-weight:600;letter-spacing:0.05em;cursor:pointer;font-family:'Inter',sans-serif;">↻ Refresh</button>
+  </div>
+</div>
+
+<!-- The spoken brief. Large type and a voice at the same time, because the
+     person this is for reads screens with difficulty. The ring answers "is it
+     still talking" without needing to hear it. -->
+<div class="speak-overlay" id="speak-overlay">
+  <div class="speak-stage">
+    <canvas id="speak-canvas" width="340" height="340" aria-hidden="true"></canvas>
+    <div class="speak-line" id="speak-line" role="status" aria-live="polite"></div>
+    <div class="speak-controls">
+      <button type="button" class="speak-ctl" id="speak-stop">■ Stop</button>
+      <span class="speak-hint">Esc to stop</span>
+    </div>
   </div>
 </div>
 
@@ -2032,6 +2091,7 @@ async function setOverride(name, currentLabel) {
     });
     const data = await res.json();
     state.overrides = data.overrides || state.overrides;
+    backupOverrides(state.overrides);
   } catch(e) { console.warn('Could not save override:', e.message); }
   renderSchedule();
   renderCard();
@@ -2381,10 +2441,11 @@ function renderCard() {
 
   renderNotes(name, category === 'contact'
     ? (matchedContact
-        ? 'RecruiterFlow Contact — not a candidate. No task notes for contacts; showing email and call history.'
+        ? 'RecruiterFlow Contact — not a candidate. Notes you add here are pushed to their contact record.'
         : 'Not in RecruiterFlow at all — showing available email and call history only.')
     : (c.notes || 'No tasks or activity logged yet. Add a note here, or log one as a Task in RecruiterFlow.'),
-    (matchedCandidate && matchedCandidate.id) || null);
+    (matchedCandidate && matchedCandidate.id) || (matchedContact && matchedContact.id) || null,
+    matchedCandidate ? 'candidate' : (matchedContact ? 'contact' : 'candidate'));
 
   document.getElementById('emails-list').innerHTML = emailListHtml(name);
   document.getElementById('calls-list').innerHTML = callListHtml(name);
@@ -3908,6 +3969,12 @@ function mapResize() {
   MAP.cv.height = Math.round(MAP.h * dpr);
   MAP.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   mapFit(true);                 // a resize is not a journey; no tween
+  /* Setting canvas.width clears it, and the frame loop only draws when
+     something is animating or dirty — so without this a resize could leave the
+     panel blank until the next unrelated redraw. Caught by the text-size test,
+     which resizes deliberately, but it was equally true of dragging a window. */
+  MAP.dirty = true;
+  if (MAP.view) geoMapDraw(performance.now());
 }
 
 /* ── The camera ────────────────────────────────────────────────────────────
@@ -4028,6 +4095,263 @@ function mapFit(instant) {
   // Nudge the whole map up a little: labels hang below their pins, so the
   // optical centre of the composition sits lower than the pins themselves.
   setView({ lat0, lon0, kx, scale: Math.max(2, innerW / spanLon), yShift: -16 }, instant);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TEXT SIZE AND THE SPOKEN BRIEF
+   This dashboard is read by someone whose sight is poor, and the design leans
+   on small type in places — 10 and 11px labels. Two things help with that:
+   making everything bigger, and not having to read it at all.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const TEXT_STEPS = [1, 1.15, 1.3, 1.5];
+
+function applyTextScale(z) {
+  /* `zoom` rather than a root font-size, because the page is laid out in
+     pixels throughout — changing the root size would move almost nothing.
+     Zoom scales the canvases' CSS boxes too, and both of them already watch
+     for a resize, so the arc and the map redraw at the new size themselves. */
+  document.body.style.zoom = z === 1 ? '' : String(z);
+  const btn = document.getElementById('text-size-btn');
+  if (btn) {
+    btn.innerHTML = z === 1 ? 'A<sup>+</sup>' : `A<sup>+</sup> ${Math.round(z * 100)}%`;
+    btn.title = z === 1 ? 'Make everything bigger'
+                        : `Text at ${Math.round(z * 100)}% — press again to go bigger`;
+  }
+  /* Both canvases size themselves from a parent box that zoom has just moved.
+     Resize them explicitly and draw once, rather than waiting on the resize
+     observers — otherwise setting the canvas width clears it and the panel
+     sits blank until the next frame the loop decides it needs. */
+  setTimeout(() => {
+    try {
+      mapResize();
+      arcResize();
+      buildDayArc();
+      arcDraw(performance.now());
+    } catch (e) { /* a canvas that isn't up yet is not worth a broken button */ }
+  }, 60);
+}
+
+function initTextSize() {
+  let z = 1;
+  try { z = Number(localStorage.getItem('rd_text_scale')) || 1; } catch (e) {}
+  if (!TEXT_STEPS.includes(z)) z = 1;
+  applyTextScale(z);
+
+  const btn = document.getElementById('text-size-btn');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    z = TEXT_STEPS[(TEXT_STEPS.indexOf(z) + 1) % TEXT_STEPS.length];
+    try { localStorage.setItem('rd_text_scale', String(z)); } catch (e) {}
+    applyTextScale(z);
+  });
+}
+
+/* ── What it says ──────────────────────────────────────────────────────────
+   Written to be heard rather than read: short sentences, the time first
+   because that is what he is placing in his head, and nothing abbreviated in
+   a way a speech engine would mangle. */
+function dayBrief() {
+  const lines = [];
+  const meetings = activeMeetings();
+  const label = dayLabel(state.currentDate);
+  const dateSaid = keyToDate(state.currentDate)
+    .toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+  const real = meetings.filter(m => {
+    const cat = classifyMeeting(m);
+    return cat !== 'personal' && cat !== 'team';
+  });
+
+  lines.push(`${label === 'Today' ? 'Today is' : label + ','} ${dateSaid}.`);
+  if (!real.length) {
+    lines.push(meetings.length
+      ? 'Nothing booked with anyone — just your own blocks.'
+      : 'Nothing on the calendar.');
+    return lines;
+  }
+
+  lines.push(`You have ${real.length} ${real.length === 1 ? 'meeting' : 'meetings'}.`);
+
+  real.forEach((m, i) => {
+    const name = m.attendees?.[0] || m.title;
+    const c = findCandidate(name) || findContact(name) || {};
+    const when = fmtTime(m.start);
+    const who = [c.title, c.company].filter(Boolean).join(' at ');
+    const where = c.geo ? (c.geo.city || c.geo.state) : (c.location || '');
+
+    let s = `${i === 0 ? 'First, at' : i === real.length - 1 ? 'Then at' : 'At'} ${when}, ${name}`;
+    if (who) s += `, ${who}`;
+    if (where) s += `, in ${where}`;
+    lines.push(s + '.');
+
+    const recap = typeof recapsFor === 'function' ? (recapsFor(name) || [])[0] : null;
+    if (recap && recap.text) {
+      // One sentence of the last conversation is the useful amount out loud.
+      const first = String(recap.text).split(/(?<=[.!?])\s+/).find(t => t.trim().length > 25);
+      if (first) lines.push(`Last time: ${first.trim()}`);
+    }
+  });
+
+  const missing = real.filter(m => {
+    const n = m.attendees?.[0] || m.title;
+    return !findCandidate(n) && !findContact(n);
+  });
+  if (missing.length) {
+    lines.push(`${missing.length === 1 ? 'One name is' : missing.length + ' names are'} ` +
+               `not in RecruiterFlow: ${missing.map(m => m.attendees?.[0] || m.title).join(', ')}.`);
+  }
+  return lines;
+}
+
+/* ── The ring ──────────────────────────────────────────────────────────────
+   The browser's speech engine gives no audio to analyse, so this is not a
+   waveform and does not pretend to be one. It is driven by the one thing the
+   engine does report: a boundary event on every word. Each one kicks the
+   energy up and it decays between them, so the ring genuinely moves with the
+   speaking rather than running a loop beside it. */
+const SPEECH = { on: false, lines: [], i: 0, energy: 0, raf: null, t: 0, bars: 72, utter: null };
+
+function speakSupported() { return typeof window.speechSynthesis !== 'undefined'; }
+
+function drawSpeakRing(ts) {
+  const cv = document.getElementById('speak-canvas');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cssW = cv.clientWidth || 340, cssH = cv.clientHeight || 340;
+  if (cv.width !== Math.round(cssW * dpr)) {
+    cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const cx = cssW / 2, cy = cssH / 2;
+  const base = Math.min(cssW, cssH) * 0.29;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  SPEECH.t = ts / 1000;
+  const e = SPEECH.energy;
+
+  const halo = ctx.createRadialGradient(cx, cy, base * 0.5, cx, cy, base * 2);
+  halo.addColorStop(0, `rgba(0,208,132,${(0.12 + e * 0.22).toFixed(3)})`);
+  halo.addColorStop(1, 'rgba(0,208,132,0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(cx, cy, base * 2, 0, Math.PI * 2); ctx.fill();
+
+  // Each bar carries its own phase, so the ring breathes rather than pulsing
+  // as one lump.
+  for (let i = 0; i < SPEECH.bars; i++) {
+    const a = (i / SPEECH.bars) * Math.PI * 2 - Math.PI / 2;
+    const wobble = reduced ? 0.5
+      : 0.5 + 0.5 * Math.sin(SPEECH.t * 2.1 + i * 0.37) * Math.sin(SPEECH.t * 0.9 + i * 0.11);
+    const len = base * (0.1 + (0.08 + e * 0.52) * wobble);
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * base, cy + Math.sin(a) * base);
+    ctx.lineTo(cx + Math.cos(a) * (base + len), cy + Math.sin(a) * (base + len));
+    ctx.lineWidth = 2.4;
+    ctx.strokeStyle = `rgba(0,208,132,${(0.3 + e * 0.6).toFixed(3)})`;
+    ctx.stroke();
+  }
+
+  ctx.beginPath(); ctx.arc(cx, cy, base, 0, Math.PI * 2);
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = `rgba(223,230,238,${(0.35 + e * 0.4).toFixed(3)})`;
+  ctx.stroke();
+
+  const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, base * 0.8);
+  core.addColorStop(0, `rgba(0,208,132,${(0.22 + e * 0.3).toFixed(3)})`);
+  core.addColorStop(1, 'rgba(0,208,132,0)');
+  ctx.fillStyle = core;
+  ctx.beginPath(); ctx.arc(cx, cy, base * 0.8, 0, Math.PI * 2); ctx.fill();
+
+  // A slow sweep, so it reads as listening even between words.
+  if (!reduced) {
+    const sweep = (SPEECH.t * 0.6) % (Math.PI * 2);
+    ctx.beginPath();
+    ctx.arc(cx, cy, base * 0.88, sweep, sweep + 0.5);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0,208,132,0.55)';
+    ctx.stroke();
+  }
+
+  SPEECH.energy = Math.max(0, SPEECH.energy - 0.022);
+  if (SPEECH.on) SPEECH.raf = requestAnimationFrame(drawSpeakRing);
+}
+
+function speakNext() {
+  if (!SPEECH.on) return;
+  if (SPEECH.i >= SPEECH.lines.length) { stopSpeaking(); return; }
+  const text = SPEECH.lines[SPEECH.i++];
+  const el = document.getElementById('speak-line');
+  if (el) el.textContent = text;
+
+  if (!speakSupported()) { SPEECH.timer = setTimeout(speakNext, 2600); return; }
+
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 0.98; u.pitch = 1;
+  const voices = speechSynthesis.getVoices() || [];
+  const voice = voices.find(v => /^en-US/.test(v.lang) && /natural|samantha|google/i.test(v.name))
+             || voices.find(v => /^en/.test(v.lang));
+  if (voice) u.voice = voice;
+  u.onboundary = () => { SPEECH.energy = Math.min(1, SPEECH.energy + 0.5); };
+  u.onend = () => { SPEECH.timer = setTimeout(speakNext, 180); };
+  u.onerror = () => { SPEECH.timer = setTimeout(speakNext, 180); };
+  SPEECH.utter = u;
+  try {
+    speechSynthesis.speak(u);
+  } catch (e) {
+    /* If the engine refuses — no voices installed, a locked-down browser, a
+       platform that throws rather than failing quietly — the brief carries on
+       as words on screen, paced to be readable. Stopping dead at line one
+       with no explanation is the one outcome worth engineering against. */
+    console.warn('[speak] voice unavailable, showing the text instead:', e.message);
+    SPEECH.energy = Math.min(1, SPEECH.energy + 0.5);
+    SPEECH.timer = setTimeout(speakNext, 2600);
+  }
+}
+
+function startSpeaking() {
+  const overlay = document.getElementById('speak-overlay');
+  if (!overlay) return;
+  SPEECH.lines = dayBrief();
+  SPEECH.i = 0;
+  SPEECH.on = true;
+  SPEECH.energy = 0.35;
+  overlay.classList.add('show');
+  const btn = document.getElementById('speak-btn');
+  if (btn) btn.classList.add('on');
+  if (!speakSupported()) {
+    // No voice here, but the words are the point; show them all, large.
+    const el = document.getElementById('speak-line');
+    if (el) el.textContent = SPEECH.lines.join(' ');
+  }
+  if (!SPEECH.raf) SPEECH.raf = requestAnimationFrame(drawSpeakRing);
+  // Chrome fills the voice list asynchronously, so a beat here gets a real
+  // voice rather than the default robot on the first press of the day.
+  const wait = speakSupported() && !speechSynthesis.getVoices().length ? 250 : 0;
+  SPEECH.timer = setTimeout(speakNext, wait);
+}
+
+function stopSpeaking() {
+  SPEECH.on = false;
+  clearTimeout(SPEECH.timer);
+  if (SPEECH.raf) { cancelAnimationFrame(SPEECH.raf); SPEECH.raf = null; }
+  if (speakSupported()) { try { speechSynthesis.cancel(); } catch (e) {} }
+  const overlay = document.getElementById('speak-overlay');
+  if (overlay) overlay.classList.remove('show');
+  const btn = document.getElementById('speak-btn');
+  if (btn) btn.classList.remove('on');
+}
+
+function initSpeaking() {
+  const btn = document.getElementById('speak-btn');
+  if (btn) btn.addEventListener('click', () => SPEECH.on ? stopSpeaking() : startSpeaking());
+  const stop = document.getElementById('speak-stop');
+  if (stop) stop.addEventListener('click', stopSpeaking);
+  const overlay = document.getElementById('speak-overlay');
+  if (overlay) overlay.addEventListener('click', e => {
+    if (e.target.id === 'speak-overlay') stopSpeaking();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && SPEECH.on) stopSpeaking(); });
 }
 
 /* ── Who else is nearby ────────────────────────────────────────────────────
@@ -5055,7 +5379,82 @@ function initSearch() {
    best-effort and its outcome is shown next to the Save button, so a CRM
    failure is visible rather than passing as a clean save.
    ═══════════════════════════════════════════════════════════════════════════ */
-const NOTE_EDIT = { name: null, id: null, fallback: '' };
+const NOTE_EDIT = { name: null, id: null, kind: 'candidate', fallback: '' };
+
+/* ── The browser as the backstop ───────────────────────────────────────────
+   The server writes notes and label corrections to its own filesystem, and
+   Render wipes that on every deploy. Until a disk is attached, this is what
+   stands between him and losing what he typed: every save is mirrored here,
+   and when the server comes up empty the browser offers its copy back.
+
+   Two rules keep that from being worse than the disease. Only entries the
+   server does not already have are offered, so the server always wins where
+   both have something. And a note he deliberately cleared is remembered as
+   cleared, so it does not rise from the dead on the next deploy. */
+const BACKUP_KEY = 'rd_backup_v1';
+
+function readBackup() {
+  try {
+    const raw = localStorage.getItem(BACKUP_KEY);
+    const b = raw ? JSON.parse(raw) : {};
+    return { notes: b.notes || {}, overrides: b.overrides || {}, cleared: b.cleared || [] };
+  } catch (e) { return { notes: {}, overrides: {}, cleared: [] }; }
+}
+
+function writeBackup(b) {
+  try { localStorage.setItem(BACKUP_KEY, JSON.stringify(b)); } catch (e) {
+    console.warn('[backup] the browser would not keep a copy:', e.message);
+  }
+}
+
+function backupNote(name, rec) {
+  const b = readBackup();
+  if (rec) {
+    b.notes[name] = rec;
+    b.cleared = b.cleared.filter(n => n !== name);
+  } else {
+    delete b.notes[name];
+    if (!b.cleared.includes(name)) b.cleared.push(name);
+  }
+  writeBackup(b);
+}
+
+function backupOverrides(overrides) {
+  const b = readBackup();
+  b.overrides = overrides || {};
+  writeBackup(b);
+}
+
+// Offer back whatever the server is missing. Runs once, quietly, after the
+// notes and overrides have loaded.
+async function restoreFromBackup() {
+  const b = readBackup();
+  const haveNotes = Object.keys(b.notes).length;
+  const haveLabels = Object.keys(b.overrides).length;
+  if (!haveNotes && !haveLabels) return;
+
+  const missingNotes = {};
+  for (const [n, rec] of Object.entries(b.notes)) if (!state.localNotes[n]) missingNotes[n] = rec;
+  const missingLabels = {};
+  for (const [n, l] of Object.entries(b.overrides)) if (!(state.overrides || {})[n]) missingLabels[n] = l;
+  if (!Object.keys(missingNotes).length && !Object.keys(missingLabels).length) return;
+
+  try {
+    const res = await fetch('/api/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: missingNotes, overrides: missingLabels, cleared: b.cleared })
+    }).then(r => r.json());
+    if (res && res.ok && (res.notes.length || res.overrides.length)) {
+      Object.assign(state.localNotes, missingNotes);
+      Object.assign(state.overrides, missingLabels);
+      console.log(`[backup] handed back ${res.notes.length} note(s) and ` +
+                  `${res.overrides.length} label(s) the server had lost`);
+      renderSchedule();
+      renderCard();
+    }
+  } catch (e) { console.warn('[backup] restore failed:', e.message); }
+}
 
 async function loadLocalNotes() {
   try {
@@ -5068,7 +5467,11 @@ async function loadLocalNotes() {
 
 // Shared by the meeting card and the search view so both show the same note
 // and both get the same editor.
-function renderNotes(name, fallbackText, candidateId) {
+/* `kind` decides which RecruiterFlow list the note is pushed to. Contact notes
+   used to be given no id at all, so they lived only in the local file — which
+   made them exactly the notes most likely to be lost, since contacts are most
+   of who he meets. */
+function renderNotes(name, fallbackText, candidateId, kind) {
   const local = state.localNotes[name];
   const textEl = document.getElementById('notes-text');
   const srcEl = document.getElementById('notes-src');
@@ -5076,6 +5479,7 @@ function renderNotes(name, fallbackText, candidateId) {
 
   NOTE_EDIT.name = name;
   NOTE_EDIT.id = candidateId || null;
+  NOTE_EDIT.kind = kind || 'candidate';
   NOTE_EDIT.fallback = fallbackText || '';
 
   if (local && local.text) {
@@ -5238,7 +5642,8 @@ async function saveNote() {
     const res = await fetch('/api/notes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: NOTE_EDIT.name, id: NOTE_EDIT.id, text })
+      body: JSON.stringify({ name: NOTE_EDIT.name, id: NOTE_EDIT.id,
+                             kind: NOTE_EDIT.kind || 'candidate', text })
     }).then(r => r.json());
 
     if (res.error) throw new Error(res.error);
@@ -5248,8 +5653,10 @@ async function saveNote() {
     if (text.trim()) {
       state.localNotes[NOTE_EDIT.name] = res.saved ||
         { text, id: NOTE_EDIT.id, updated: new Date().toISOString() };
+      backupNote(NOTE_EDIT.name, state.localNotes[NOTE_EDIT.name]);
     } else {
       delete state.localNotes[NOTE_EDIT.name];
+      backupNote(NOTE_EDIT.name, null);     // and remember it was cleared on purpose
     }
 
     const rf = res.recruiterflow || {};
@@ -5314,8 +5721,10 @@ async function loadAll() {
   setSync(true);              // the schedule is usable; the rest fills in behind it
 
   // Cheap, independent extras.
-  loadOverrides().then(() => { renderSchedule(); renderCard(); }).catch(() => {});
-  loadLocalNotes().then(() => renderCard()).catch(() => {});
+  Promise.all([
+    loadOverrides().then(() => { renderSchedule(); renderCard(); }).catch(() => {}),
+    loadLocalNotes().then(() => renderCard()).catch(() => {})
+  ]).then(restoreFromBackup).catch(() => {});
   loadRecaps().catch(() => {});
   loadWeather().catch(() => {});
   loadNews().catch(() => {});
@@ -5352,6 +5761,8 @@ initGeoMap();
 initSearch();
 initWeather();
 initAlertDismissal();
+initTextSize();
+initSpeaking();
 attachTiltEffect();
 
 loadAll();
