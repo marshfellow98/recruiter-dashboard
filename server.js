@@ -494,12 +494,50 @@ async function getRCToken() {
   if (res.body.access_token) {
     tokens.rc = res.body.access_token;
     tokens.rcExpiry = Date.now() + (50 * 60 * 1000);
-    console.log('RC token acquired successfully');
+    // RingCentral states the app's permissions in the token response. Reading
+    // them here is what lets the dashboard know whether it can ring his phone
+    // or has to hand the number to the desktop dialer — without finding out by
+    // placing a call and failing.
+    tokens.rcScopes = String(res.body.scope || '');
+    console.log('RC token acquired successfully; scopes:', tokens.rcScopes || '(none reported)');
   } else {
     console.error('RC token error:', JSON.stringify(res.body));
   }
   return tokens.rc;
-  return tokens.rc;
+}
+
+function rcCanRingOut() { return /RingOut/i.test(tokens.rcScopes || ''); }
+
+/* RingOut calls his own phone first and only then dials the other party, so
+   the number he is calling from is his, and the call lands in RingCentral's
+   log like any other. It needs to know which of his numbers to ring. */
+async function rcCallerId() {
+  if (process.env.RC_CALLER_ID) return process.env.RC_CALLER_ID;
+  if (tokens.rcFrom) return tokens.rcFrom;
+  const token = await getRCToken();
+  const res = await fetchJSON({
+    hostname: 'platform.ringcentral.com',
+    path: '/restapi/v1.0/account/~/extension/~/phone-number?perPage=25',
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  const nums = (res.body && res.body.records) || [];
+  const pick = nums.find(n => n.usageType === 'DirectNumber')
+            || nums.find(n => n.usageType === 'MainCompanyNumber')
+            || nums[0];
+  tokens.rcFrom = pick ? pick.phoneNumber : null;
+  return tokens.rcFrom;
+}
+
+// Digits only, then E.164. RecruiterFlow already stores most numbers as
+// +1XXXXXXXXXX, but a hand-typed "(614) 555-0211" has to work too.
+function toE164(raw) {
+  const s = String(raw || '').trim();
+  if (/^\+[1-9]\d{7,14}$/.test(s)) return s;
+  const d = s.replace(/\D/g, '');
+  if (d.length === 10) return '+1' + d;
+  if (d.length === 11 && d[0] === '1') return '+' + d;
+  return null;
 }
 
 // ── Candidate list: incremental sync ──────────────────────────────────────
@@ -567,6 +605,73 @@ function setCandidateCache(list, isFull) {
   candidatesCache.index = buildNameIndex(list);
   candidatesCache.expiry = now + CAND_TTL;
   if (isFull) candidatesCache.lastFull = now;
+}
+
+/* ── Which day is it where he is ───────────────────────────────────────────
+   The calendar routes used to subtract a hardcoded five hours to get Central
+   time. That is right for half the year: CDT is UTC-5, CST is UTC-6. From the
+   first Sunday in November the boundaries would have slipped by an hour, and
+   an early-morning or late-evening meeting would have been filed under the
+   wrong day — the same class of bug that was once cutting off everything
+   after 7pm.
+
+   These ask the runtime for the real offset instead, which handles the
+   changeover without anyone having to remember it. */
+const BIZ_TZ = process.env.BIZ_TZ || 'America/Chicago';
+
+function tzParts(date, tz) {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  const p = {};
+  for (const x of dtf.formatToParts(date)) if (x.type !== 'literal') p[x.type] = x.value;
+  return p;
+}
+
+// How far the zone is from UTC at this instant, in milliseconds.
+function tzOffsetMs(date, tz = BIZ_TZ) {
+  const p = tzParts(date, tz);
+  const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day,
+                         +p.hour % 24, +p.minute, +p.second);
+  return asUTC - Math.floor(date.getTime() / 1000) * 1000;
+}
+
+// Today's date where he is, as YYYY-MM-DD.
+function bizToday(tz = BIZ_TZ) {
+  const p = tzParts(new Date(), tz);
+  return `${p.year}-${p.month}-${p.day}`;
+}
+
+function addDays(key, n) {
+  const [y, m, d] = key.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + n));
+  return t.toISOString().slice(0, 10);
+}
+
+/* The UTC instants that bracket one local day. The offset is probed at local
+   midday, which is never inside a changeover, so a day that is 23 or 25 hours
+   long still starts and ends in the right place. */
+function dayWindow(key, tz = BIZ_TZ) {
+  const [y, m, d] = key.split('-').map(Number);
+  const off = tzOffsetMs(new Date(Date.UTC(y, m - 1, d, 12)), tz);
+  const start = Date.UTC(y, m - 1, d, 0, 0, 0) - off;
+  const endOff = tzOffsetMs(new Date(Date.UTC(y, m - 1, d + 1, 12)), tz);
+  const end = Date.UTC(y, m - 1, d + 1, 0, 0, 0) - endOff - 1000;
+  return { startISO: new Date(start).toISOString(), endISO: new Date(end).toISOString() };
+}
+
+/* Which local day an event belongs to. With the Prefer header above, Graph
+   returns times already in his zone and says so; without it they are UTC. */
+function bizDateOf(dateTime, zone) {
+  if (!dateTime) return null;
+  const local = zone && !/^utc$/i.test(zone);
+  if (local) return String(dateTime).slice(0, 10);
+  const t = Date.parse(String(dateTime).endsWith('Z') ? dateTime : dateTime + 'Z');
+  if (!Number.isFinite(t)) return null;
+  const p = tzParts(new Date(t), BIZ_TZ);
+  return `${p.year}-${p.month}-${p.day}`;
 }
 
 // ── Geocoding, from the baked gazetteer ───────────────────────────────────
@@ -754,6 +859,10 @@ function contactPerson(c) {
     companyId: c.client_company_id || null,
     email: emails[0] || '',
     phone: phones[0] || '',
+    // Most of his contacts have two or three numbers on file and RecruiterFlow
+    // does not label them, so the map offers the lot rather than guessing which
+    // one is the desk and which is the mobile.
+    phones: phones.filter(Boolean).slice(0, 4),
     lastContacted: c.last_contacted || null
   };
 }
@@ -821,42 +930,95 @@ function consolidateCompanies(people) {
    address, its web domain and its open jobs. So an office with nobody
    attached to it yet still earns a pin, and a firm with an address of its own
    is pinned there rather than wherever its people happen to sit. */
-const clientsCache = { data: null, expiry: 0 };
-let clientsInFlight = null;
+/* Measured against the live account the first time this ran: the client list
+   is at least 10,000 records — it hit the 100-page ceiling exactly — of which
+   9,737 have an address and 9,600 have nobody attached to them and no open
+   roles. It is a bulk-imported list of agencies, not his book. Pinned raw, Los
+   Angeles came back with 366 firms against 8 people, which buries the handful
+   that matter under everything that doesn't.
 
-async function getClients() {
+   So the client list is used to ENRICH the firms he actually deals with,
+   never to populate the map by itself. A firm earns a place if one of his
+   contacts works there, if it has a role open, or if he has actually spoken to
+   it. Everything else stays off. */
+const clientsCache = { data: null, expiry: 0, via: null, scanned: 0 };
+let clientsInFlight = null;
+const CLIENT_TTL = Number(process.env.CLIENT_TTL_MS || 6 * 3600000);
+const CLIENT_MAX_PAGES = Number(process.env.CLIENT_MAX_PAGES || 200);
+
+function clientIsRelevant(f, wantedIds, wantedKeys) {
+  if (wantedIds.has(f.id)) return true;
+  if (wantedKeys.has(coKey(f.name) || String(f.name || '').toLowerCase())) return true;
+  if (f.openJobs > 0) return true;
+  return !!(f.lastContact || f.lastEngagement);
+}
+
+async function getClients(wantedIds, wantedKeys) {
   if (clientsCache.data && Date.now() < clientsCache.expiry) return clientsCache.data;
   if (clientsInFlight) return clientsInFlight;
 
+  const rfGet = path => fetchJSON({
+    hostname: 'recruiterflow.com', path, method: 'GET',
+    headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
+  });
+
   clientsInFlight = (async () => {
-    let all = [];
-    let page = 1;
-    while (page <= 100) {
-      const res = await fetchJSON({
-        hostname: 'recruiterflow.com',
-        path: `/api/external/client/list?current_page=${page}&items_per_page=100`,
-        method: 'GET',
-        headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey }
-      });
-      if (res.status !== 200) {
-        console.warn(`[clients] client/list returned ${res.status} — falling back to contacts alone`);
-        break;
+    /* Fast path: ask for the few dozen firms his contacts work at, by id.
+       Crawling 100+ pages every refresh to find 45 records is the kind of
+       thing that makes a dashboard feel slow for no reason. */
+    const ids = [...wantedIds].filter(Boolean).slice(0, 300);
+    const byId = [];
+    let perId = false;
+    if (ids.length) {
+      const probe = await rfGet(`/api/external/client/${ids[0]}`);
+      const rec = probe.body && (probe.body.data || probe.body);
+      if (probe.status === 200 && rec && rec.id) {
+        perId = true;
+        byId.push(rec);
+        for (const id of ids.slice(1)) {
+          const r = await rfGet(`/api/external/client/${id}`);
+          const b = r.body && (r.body.data || r.body);
+          if (r.status === 200 && b && b.id) byId.push(b);
+        }
       }
-      const pageData = Array.isArray(res.body) ? res.body : (res.body?.data || []);
-      if (!pageData.length) break;
-      all = all.concat(pageData);
-      if (pageData.length < 100) break;
-      page++;
     }
-    console.log(`[clients] ${all.length} client companies across ${page} page(s)`);
+
+    let all, via, scanned;
+    if (perId) {
+      all = byId; via = 'by-id'; scanned = byId.length;
+    } else {
+      // Fall back to the list, and filter it down to what is actually his.
+      const raw = [];
+      let page = 1;
+      while (page <= CLIENT_MAX_PAGES) {
+        const res = await rfGet(`/api/external/client/list?current_page=${page}&items_per_page=100`);
+        if (res.status !== 200) {
+          console.warn(`[clients] client/list returned ${res.status}`);
+          break;
+        }
+        const pageData = Array.isArray(res.body) ? res.body : (res.body?.data || []);
+        if (!pageData.length) break;
+        raw.push(...pageData);
+        if (pageData.length < 100) break;
+        page++;
+      }
+      scanned = raw.length;
+      all = raw.filter(c => clientIsRelevant(clientRecord(c), wantedIds, wantedKeys));
+      via = 'list';
+    }
+
+    console.log(`[clients] ${all.length} firms kept via ${via} (scanned ${scanned})`);
     clientsCache.data = all;
-    clientsCache.expiry = Date.now() + CONTACT_TTL;
+    clientsCache.via = via;
+    clientsCache.scanned = scanned;
+    clientsCache.expiry = Date.now() + CLIENT_TTL;
     PLACES.builtFor = null;
     return all;
   })().catch(e => {
     // A map missing its client offices still beats no map.
     console.warn('[clients]', e.message);
     clientsCache.data = [];
+    clientsCache.via = 'failed';
     clientsCache.expiry = Date.now() + 60000;
     return [];
   }).finally(() => { clientsInFlight = null; });
@@ -873,12 +1035,24 @@ function clientRecord(c) {
     industry: c.industry || '',
     openJobs: Array.isArray(c.open_jobs) ? c.open_jobs.length : 0,
     phone: phones[0] || '',
+    lastContact: c.last_contact || null,
+    lastEngagement: c.last_engagement || null,
     geo: geoForLocation(c.location)
   };
 }
 
 async function buildPlaces() {
-  const [contacts, clients] = await Promise.all([getContacts(), getClients()]);
+  const contacts = await getContacts();
+  /* Which firms are his: the ones his contacts work at. The client list is
+     read through this lens rather than wholesale — see getClients(). */
+  const wantedIds = new Set();
+  const wantedKeys = new Set();
+  for (const c of contacts) {
+    if (c.client_company_id) wantedIds.add(c.client_company_id);
+    const n = String(c.client_company_name || '').trim();
+    if (n) wantedKeys.add(coKey(n) || n.toLowerCase());
+  }
+  const clients = await getClients(wantedIds, wantedKeys);
   if (PLACES.builtFor === contactsCache.expiry) return PLACES;
 
   const unplaced = [];
@@ -1313,20 +1487,55 @@ async function handleAPI(pathname, query) {
   // Debug MS token
   if (pathname === '/api/calendar') {
     const token = await getMSToken();
-    // Wide window covering full day in Central Time regardless of server UTC offset.
-    // Central midnight-to-midnight spans into the NEXT UTC calendar day, so the end
-    // boundary must roll over rather than stopping at the same UTC date's 23:59:59
-    // (which was cutting off anything after ~7pm Central — the actual bug).
-    const now = new Date();
-    const centralOffset = 5 * 60 * 60 * 1000;
-    const centralNow = new Date(now.getTime() - centralOffset);
-    const today = centralNow.toISOString().split('T')[0];
-    const centralNowPlus1 = new Date(centralNow.getTime() + 24*60*60*1000);
-    const nextDay = centralNowPlus1.toISOString().split('T')[0];
-    console.log('Fetching calendar for date:', today);
+
+    /* A named date, or a run of days starting today. Without either it answers
+       exactly as it always did, so a half-landed deploy cannot break the
+       schedule. */
+    if (query.date || query.days) {
+      const n = Math.min(Math.max(Number(query.days) || 1, 1), 31);
+      const first = String(query.date || bizToday());
+      const keys = [];
+      for (let i = 0; i < n; i++) keys.push(addDays(first, i));
+
+      const win = { start: dayWindow(keys[0]).startISO,
+                    end: dayWindow(keys[keys.length - 1]).endISO };
+      const res = await fetchJSON({
+        hostname: 'graph.microsoft.com',
+        path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView` +
+              `?startDateTime=${win.start}&endDateTime=${win.end}` +
+              `&$select=subject,start,end,bodyPreview,onlineMeeting,attendees` +
+              `&$orderby=start/dateTime&$top=400`,
+        method: 'GET',
+        /* Deliberately NOT asking Graph for local times. The browser has
+           assumed throughout that a Graph datetime is UTC — fmtTime appends
+           the Z itself — so handing it local wall-clock times showed a 9:30
+           meeting at 4:30 in the morning. The day an event belongs to is
+           worked out here instead, where the timezone is known. */
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      const days = {};
+      for (const k of keys) days[k] = [];
+      let dropped = 0;
+      for (const e of (res.body?.value || [])) {
+        const k = bizDateOf(e.start?.dateTime, e.start?.timeZone);
+        if (days[k]) days[k].push(e); else dropped++;
+      }
+      console.log(`[calendar] ${keys.length} day(s) from ${keys[0]}: ` +
+                  `${(res.body?.value || []).length} events` +
+                  (dropped ? `, ${dropped} outside the window` : ''));
+      return { tz: BIZ_TZ, from: keys[0], to: keys[keys.length - 1],
+               days, counts: Object.fromEntries(keys.map(k => [k, days[k].length])) };
+    }
+
+    // Today, in his zone. The boundaries come from dayWindow() now rather than
+    // a hardcoded five-hour offset, so they stay right either side of November.
+    const today = bizToday();
+    const w = dayWindow(today);
+    console.log('Fetching calendar for date:', today, w.startISO, '→', w.endISO);
     const res = await fetchJSON({
       hostname: 'graph.microsoft.com',
-      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${today}T00:00:00Z&endDateTime=${nextDay}T04:59:59Z&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=20`,
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${w.startISO}&endDateTime=${w.endISO}&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=100`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -1336,16 +1545,10 @@ async function handleAPI(pathname, query) {
 
   if (pathname === '/api/calendar/tomorrow') {
     const token = await getMSToken();
-    // Use Central Time (UTC-5) for tomorrow
-    const now = new Date();
-    const centralOffset = 5 * 60 * 60 * 1000;
-    const centralNow = new Date(now.getTime() - centralOffset);
-    centralNow.setDate(centralNow.getDate() + 1);
-    const tDate = centralNow.toISOString().split('T')[0];
-    const tDatePlus1 = new Date(centralNow.getTime() + 24*60*60*1000).toISOString().split('T')[0];
+    const w = dayWindow(addDays(bizToday(), 1));
     const res = await fetchJSON({
       hostname: 'graph.microsoft.com',
-      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${tDate}T05:00:00Z&endDateTime=${tDatePlus1}T04:59:59Z&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=20`,
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${w.startISO}&endDateTime=${w.endISO}&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=100`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -1691,6 +1894,8 @@ async function handleAPI(pathname, query) {
       unplaced: unplaced.length,
       clients: P.clients,
       clientsWithAnAddress: P.clientsPlaced,
+      clientsVia: clientsCache.via,
+      clientRecordsScanned: clientsCache.scanned,
       officesWithNobodyAttached: list.reduce((n, l) =>
         n + l.companies.filter(c => c.officeOnly).length, 0),
       openJobs: list.reduce((n, l) => n + (l.openJobs || 0), 0),
@@ -1720,6 +1925,23 @@ async function handleAPI(pathname, query) {
       callsCache.expiry = Date.now() + 60000; // 60s — smooths over simultaneous refreshes from both users
     }
     return res.body;
+  }
+
+  /* Can the dashboard ring his phone, or does it have to hand the number to
+     the desktop dialer? Answered from the app's own permissions rather than by
+     trying it and failing. */
+  if (pathname === '/api/call/status') {
+    await getRCToken();
+    let from = null;
+    if (rcCanRingOut()) { try { from = await rcCallerId(); } catch (e) { /* reported below */ } }
+    return {
+      ringOut: rcCanRingOut() && !!from,
+      from,
+      scopes: tokens.rcScopes || '',
+      reason: rcCanRingOut()
+        ? (from ? null : 'no number found to call from — set RC_CALLER_ID')
+        : 'the RingCentral app does not have the RingOut permission'
+    };
   }
 
   if (pathname === '/api/zoom') {
@@ -2148,6 +2370,65 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/notes' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(loadNotes()));
+    return;
+  }
+
+  /* Place a call. RingOut rings HIS phone first and connects the other party
+     only once he picks up, so nothing dials out on a stray click and he is
+     never the one left holding a ringing line. The dashboard asks him to
+     confirm before this is ever reached. */
+  if (pathname === '/api/call' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const to = toE164(body.to);
+      const who = String(body.name || '').slice(0, 80);
+      if (!to) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'a callable number is required', got: body.to || null }));
+        return;
+      }
+      await getRCToken();
+      if (!rcCanRingOut()) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'RingOut is not enabled on this RingCentral app',
+                                 scopes: tokens.rcScopes || '', fallback: 'tel' }));
+        return;
+      }
+      const from = await rcCallerId();
+      if (!from) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'no number to call from', fallback: 'tel' }));
+        return;
+      }
+
+      const payload = JSON.stringify({
+        from: { phoneNumber: from },
+        to: { phoneNumber: to },
+        playPrompt: false
+      });
+      const rc = await fetchJSON({
+        hostname: 'platform.ringcentral.com',
+        path: '/restapi/v1.0/account/~/extension/~/ring-out',
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${await getRCToken()}`,
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        }
+      }, payload);
+
+      const ok = rc.status === 200 || rc.status === 201;
+      console.log(`[call] ${who || to}: RingOut ${ok ? 'placed' : 'failed ' + rc.status}`);
+      res.writeHead(ok ? 200 : 502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(ok
+        ? { ok: true, from, to, callId: rc.body?.id || null,
+            status: rc.body?.status?.callStatus || 'InProgress' }
+        : { error: rc.body?.message || `RingCentral returned ${rc.status}`,
+            status: rc.status, fallback: 'tel' }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message, fallback: 'tel' }));
+    }
     return;
   }
 
