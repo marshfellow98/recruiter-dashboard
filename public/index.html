@@ -123,6 +123,71 @@
   @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
 
   /* Day toggle */
+  /* ── Adding someone to RecruiterFlow ──────────────────────────────────── */
+  .contact-btn.add-rf {
+    color: #06110c; background: var(--accent); border-color: transparent; font-weight: 700;
+  }
+  .add-person {
+    position: fixed; z-index: 310; left: 50%; top: 50%;
+    transform: translate(-50%, -48%) scale(0.98);
+    width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 60px); overflow-y: auto;
+    padding: 24px 26px 22px; border-radius: 22px;
+    background: rgba(12,13,17,0.97);
+    -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+    border: 1px solid rgba(255,255,255,0.14);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+    opacity: 0; pointer-events: none; transition: opacity 0.18s ease, transform 0.18s ease;
+  }
+  .add-person.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+  .addp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .addp-title { font-size: 19px; font-weight: 700; color: var(--t1); }
+  .addp-close {
+    font: inherit; font-size: 22px; line-height: 1; color: var(--t4);
+    background: none; border: none; cursor: pointer;
+  }
+  .addp-close:hover { color: var(--t1); }
+  .addp-sub { font-size: 13px; color: var(--t4); margin: 4px 0 16px; }
+  .addp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+  .addp-grid label {
+    display: flex; flex-direction: column; gap: 5px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--t4);
+  }
+  .addp-grid input {
+    font-family: 'Inter', sans-serif; font-size: 15px; color: var(--t1);
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 10px; padding: 11px 12px;
+  }
+  .addp-grid input:focus { outline: none; border-color: var(--accent); }
+  .addp-note { font-size: 13px; color: var(--t3); min-height: 1.2em; margin: 14px 0 2px; }
+  .addp-note.good { color: var(--accent); }
+  .addp-note.bad { color: #ff8a8a; }
+  .addp-note.warn { color: #f5c06a; }
+  .addp-note a, .addp-anyway {
+    color: var(--accent); background: none; border: none; padding: 0;
+    font: inherit; text-decoration: underline; cursor: pointer;
+  }
+  .addp-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .addp-go {
+    font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 700;
+    color: #06110c; background: var(--accent); border: none; border-radius: 10px;
+    padding: 12px 18px; cursor: pointer;
+  }
+  .addp-go.alt {
+    color: var(--t1); background: rgba(138,92,255,0.22);
+    border: 1px solid rgba(138,92,255,0.5);
+  }
+  .addp-cancel {
+    font-family: 'Inter', sans-serif; font-size: 13px; color: var(--t4);
+    background: none; border: none; cursor: pointer;
+  }
+  .addp-cancel:hover { color: var(--t2); }
+  .addp-hint { font-size: 12px; color: var(--t4); margin-top: 12px; line-height: 1.5; }
+  @media (max-width: 760px) {
+    .addp-grid { grid-template-columns: 1fr; }
+    .addp-go { width: 100%; }
+  }
+
   /* ── Topbar tools: text size and the spoken brief ─────────────────────── */
   .tool-btn {
     font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600;
@@ -1258,6 +1323,9 @@
     </div>
   </div>
 </div>
+
+<!-- Filing someone the calendar knows but RecruiterFlow does not. -->
+<div class="add-person" id="add-person"></div>
 
 <div class="weather-alert-strip" id="weather-alert-strip" style="display:none;"></div>
 
@@ -2477,7 +2545,18 @@ function renderCard() {
   } else if (category === 'contact' && matchedContact && matchedContact.id) {
     btns += `<a class="contact-btn" href="https://recruiterflow.com/contacts/${matchedContact.id}" target="_blank">↗ RecruiterFlow</a>`;
   }
+  /* Nobody on file. The dashboard already knows their name and usually their
+     email, so rather than just reporting the gap it offers to close it. */
+  if (!matchedCandidate && !matchedContact && category !== 'personal' && category !== 'team') {
+    btns += `<button type="button" class="contact-btn add-rf" id="add-rf-btn"
+                data-name="${esc(name)}" data-email="${esc(c.email || '')}"
+                data-phone="${esc(c.phone || '')}">+ Add to RecruiterFlow</button>`;
+  }
   document.getElementById('contact-row').innerHTML = btns;
+  const addBtn = document.getElementById('add-rf-btn');
+  if (addBtn) addBtn.addEventListener('click', () => openAddPerson({
+    name: addBtn.dataset.name, email: addBtn.dataset.email, phone: addBtn.dataset.phone
+  }));
 
   document.getElementById('info-row').innerHTML = `
     <div class="info-cell"><div class="info-label">Stage</div><div class="info-val">${c.stage||'—'}</div></div>
@@ -4141,6 +4220,156 @@ function mapFit(instant) {
   // Nudge the whole map up a little: labels hang below their pins, so the
   // optical centre of the composition sits lower than the pins themselves.
   setView({ lat0, lon0, kx, scale: Math.max(2, innerW / spanLon), yShift: -16 }, instant);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ADDING SOMEONE TO RECRUITERFLOW
+   Most people on the calendar are already on file. The ones who are not get
+   no pin on the map, no history, and nowhere to hang a note — today's only
+   outside meeting was with someone writing from a gmail address who appears
+   in neither list. The dashboard knows her name and her email already, so it
+   offers to file her rather than just reporting the gap.
+
+   This writes to his real book of business, so it follows the same rules as
+   the call button: he confirms, he chooses which list, the duplicate check
+   runs first, and the request is sent once with no retry — a retried create
+   is a second person on file.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const ADD_PERSON = { open: false, busy: false, closeTimer: null };
+
+function addPersonEl() { return document.getElementById('add-person'); }
+
+function closeAddPerson() {
+  if (ADD_PERSON.closeTimer) { clearTimeout(ADD_PERSON.closeTimer); ADD_PERSON.closeTimer = null; }
+  const el = addPersonEl();
+  if (el) { el.classList.remove('open'); el.innerHTML = ''; }
+  ADD_PERSON.open = false;
+}
+
+function openAddPerson(seed) {
+  const el = addPersonEl();
+  if (!el || ADD_PERSON.busy) return;
+  /* If one person was just filed, the confirmation is still on screen behind a
+     timer that empties this panel. Cancel it, or the form he just opened for
+     the next person blanks out under his hands a second later. */
+  if (ADD_PERSON.closeTimer) { clearTimeout(ADD_PERSON.closeTimer); ADD_PERSON.closeTimer = null; }
+  ADD_PERSON.open = true;
+
+  const parts = String(seed.name || '').trim().split(/\s+/);
+  const first = parts[0] || '';
+  const last = parts.slice(1).join(' ');
+
+  el.innerHTML = `
+    <div class="addp-head">
+      <div class="addp-title">Add ${esc(seed.name)} to RecruiterFlow</div>
+      <button type="button" class="addp-close" aria-label="Close">×</button>
+    </div>
+    <div class="addp-sub">Everything here came off the meeting. Correct anything that is wrong.</div>
+    <div class="addp-grid">
+      <label>First name<input id="addp-first" value="${esc(first)}"></label>
+      <label>Last name<input id="addp-last" value="${esc(last)}"></label>
+      <label>Email<input id="addp-email" value="${esc(seed.email || '')}"></label>
+      <label>Phone<input id="addp-phone" value="${esc(seed.phone || '')}"></label>
+      <label>Title<input id="addp-title" placeholder="Producer, VP Claims…"></label>
+      <label>Company<input id="addp-company" placeholder="Where they work"></label>
+      <label>City<input id="addp-city" placeholder="Puts them on the map"></label>
+      <label>State<input id="addp-state" placeholder="TX" maxlength="2"></label>
+    </div>
+    <div class="addp-note" id="addp-note"></div>
+    <div class="addp-actions">
+      <button type="button" class="addp-go" data-kind="candidate">Add as candidate</button>
+      <button type="button" class="addp-go alt" data-kind="contact">Add as client contact</button>
+      <button type="button" class="addp-cancel">Cancel</button>
+    </div>
+    <div class="addp-hint">A candidate carries a location and a stage. A contact belongs to a
+      company, and is placed on the map through it.</div>`;
+
+  el.classList.add('open');
+  el.querySelector('.addp-close').addEventListener('click', closeAddPerson);
+  el.querySelector('.addp-cancel').addEventListener('click', closeAddPerson);
+  el.querySelectorAll('.addp-go').forEach(b =>
+    b.addEventListener('click', () => submitAddPerson(b.dataset.kind, b)));
+  const f = document.getElementById('addp-first');
+  if (f) f.focus();
+}
+
+async function submitAddPerson(kind, btn, anyway) {
+  if (ADD_PERSON.busy) return;
+  const val = id => (document.getElementById(id) || {}).value || '';
+  const note = document.getElementById('addp-note');
+  const body = {
+    kind,
+    anyway: !!anyway,
+    firstName: val('addp-first').trim(),
+    lastName: val('addp-last').trim(),
+    name: `${val('addp-first')} ${val('addp-last')}`.trim(),
+    email: val('addp-email').trim(),
+    phone: val('addp-phone').trim(),
+    title: val('addp-title').trim(),
+    company: val('addp-company').trim(),
+    city: val('addp-city').trim(),
+    state: val('addp-state').trim().toUpperCase()
+  };
+  if (!body.name) { note.textContent = 'A name is needed.'; note.className = 'addp-note bad'; return; }
+
+  ADD_PERSON.busy = true;
+  const label = btn.textContent;
+  btn.textContent = 'Adding…';
+  note.textContent = '';
+  note.className = 'addp-note';
+
+  try {
+    /* Deliberately a plain fetch: apiFetch retries, and a retried create is a
+       second person in his CRM. */
+    const res = await fetch('/api/person/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const r = await res.json().catch(() => ({}));
+
+    if (res.status === 409 && r.existing) {
+      // Already on file. Offer the record rather than making a second one.
+      const e = r.existing;
+      note.className = 'addp-note warn';
+      note.innerHTML =
+        `${esc(e.name)} is already on file as a ${e.where === 'contacts' ? 'contact' : 'candidate'}` +
+        ` (matched on ${esc(e.on)}). ` +
+        `<a href="https://recruiterflow.com/${e.where === 'contacts' ? 'contacts' : 'candidates'}/${esc(e.id)}"
+            target="_blank" rel="noopener">Open it</a> — or ` +
+        `<button type="button" class="addp-anyway">add anyway</button>.`;
+      note.querySelector('.addp-anyway').addEventListener('click', () => {
+        ADD_PERSON.busy = false;
+        submitAddPerson(kind, btn, true);
+      });
+      btn.textContent = label;
+      ADD_PERSON.busy = false;
+      return;
+    }
+
+    if (!res.ok || !r.ok) throw new Error(r.error || `failed (${res.status})`);
+
+    note.className = 'addp-note good';
+    note.textContent = `Filed as a ${r.kind}.` +
+      (r.note === 'pushed' ? ' Your note went with them.' : '');
+
+    /* Fetch them back so the card, the map and the prep all fill in without a
+       reload — the whole point was that they were missing from those. */
+    await loadCandidates().catch(() => {});
+    await loadContacts().catch(() => {});
+    renderSchedule();
+    renderCard();
+    renderDayStrip();
+    generatePrep();
+    refreshNearby();
+    ADD_PERSON.closeTimer = setTimeout(closeAddPerson, 1800);
+  } catch (e) {
+    note.className = 'addp-note bad';
+    note.textContent = `RecruiterFlow would not take it: ${e.message}`;
+    btn.textContent = label;
+  } finally {
+    ADD_PERSON.busy = false;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
