@@ -266,18 +266,27 @@ function saveNotes(notes) {
   fs.renameSync(tmp, NOTES_FILE);
 }
 
-/* `kind` says which list the id belongs to. Contact notes used to go nowhere
-   but the local file — so a note about a hiring manager was exactly the note
-   most likely to be lost on the next deploy, since contacts are most of who he
-   meets. */
+/* This was pushing notes to candidate/update as `{id, notes: [text]}`, and
+   RecruiterFlow's own spec does not list `notes` among the properties that
+   endpoint accepts — the documented behaviour is "a complete update... any
+   existing data in the provided key will be wiped out", for keys it knows.
+   An unknown key is simply ignored, which means every note this dashboard has
+   ever "saved to RecruiterFlow" went nowhere: the API answered 200, the UI
+   said "Saved here and in RecruiterFlow", and the only real copy was the local
+   file that Render wipes on each deploy.
+
+   There is a proper endpoint for this — candidate/notes/add and
+   contact/notes/add, taking {id, value} — and it appends rather than
+   replacing, which is what a note should do. */
 async function pushNoteToRecruiterFlow(id, text, kind = 'candidate') {
   if (!id) return { attempted: false, reason: 'no RecruiterFlow id on this record' };
   if (!CONFIG.recruiterflow.apiKey) return { attempted: false, reason: 'no API key configured' };
-  const payload = JSON.stringify({ id: Number(id) || id, notes: [text] });
+  const payload = JSON.stringify({ id: Number(id) || id, value: String(text) });
   try {
     const res = await fetchJSON({
       hostname: 'recruiterflow.com',
-      path: kind === 'contact' ? '/api/external/contact/update' : '/api/external/candidate/update',
+      path: kind === 'contact' ? '/api/external/contact/notes/add'
+                               : '/api/external/candidate/notes/add',
       method: 'POST',
       headers: {
         'rf-api-key': CONFIG.recruiterflow.apiKey,
@@ -289,6 +298,94 @@ async function pushNoteToRecruiterFlow(id, text, kind = 'candidate') {
   } catch (e) {
     return { attempted: true, ok: false, error: e.message };
   }
+}
+
+/* ── Putting someone into RecruiterFlow ────────────────────────────────────
+   Most of the people on his calendar are already in one of the two lists, but
+   not all: today's only outside meeting was with someone writing from a gmail
+   address who appears in neither, which means no location on the map, no
+   history, and nowhere to hang a note. The dashboard already knows her name,
+   her email and the meeting she is attached to, so it can offer to file her.
+
+   Field names and the response shape come from RecruiterFlow's own spec:
+     candidate/add → first_name, last_name, email[{email,is_primary}],
+                     phone_number[{phone_number,type}], title, organization,
+                     source, location{city,state,country}, tags
+     contact/add   → the same, with client_company instead of location
+     both answer   → { RESULT: "SUCCESS", data: { id } }
+   Note that a contact takes no location of its own; a contact is placed on the
+   map through the company they belong to. */
+async function createInRecruiterFlow(rec, kind) {
+  if (!CONFIG.recruiterflow.apiKey) return { ok: false, error: 'no API key configured' };
+
+  const first = String(rec.firstName || '').trim();
+  const last = String(rec.lastName || '').trim();
+  if (!first && !last) return { ok: false, error: 'a name is required' };
+
+  const body = {
+    first_name: first,
+    last_name: last,
+    title: String(rec.title || '').trim() || undefined,
+    source: 'Recruiter Dashboard',
+    tags: ['Added from dashboard']
+  };
+  if (rec.email) body.email = [{ email: String(rec.email).trim(), is_primary: 1 }];
+  if (rec.phone) body.phone_number = [{ phone_number: String(rec.phone).trim(), type: 1 }];
+
+  if (kind === 'contact') {
+    if (rec.company) body.client_company = String(rec.company).trim();
+  } else {
+    if (rec.company) body.organization = String(rec.company).trim();
+    const city = String(rec.city || '').trim();
+    const state = String(rec.state || '').trim();
+    if (city || state) body.location = { city, state, country: 'United States' };
+  }
+
+  const payload = JSON.stringify(body);
+  const res = await fetchJSON({
+    hostname: 'recruiterflow.com',
+    path: kind === 'contact' ? '/api/external/contact/add' : '/api/external/candidate/add',
+    method: 'POST',
+    headers: {
+      'rf-api-key': CONFIG.recruiterflow.apiKey,
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload)
+    }
+  }, payload);
+
+  const b = res.body || {};
+  const id = (b.data && b.data.id) || b.id || null;
+  const ok = (res.status >= 200 && res.status < 300) &&
+             (!b.RESULT || /success/i.test(b.RESULT)) && !!id;
+  return ok
+    ? { ok: true, id, kind, sent: body }
+    : { ok: false, status: res.status, error: b.message || b.RESULT || `RecruiterFlow returned ${res.status}`,
+        body: b };
+}
+
+// Is this person already on file? Checked before creating, because a duplicate
+// in a book of business is worse than a missing record.
+function findExistingPerson(name, email) {
+  const lower = String(name || '').trim().toLowerCase();
+  const mail = String(email || '').trim().toLowerCase();
+  const sameMail = list => (list || []).find(c => {
+    const arr = Array.isArray(c.email) ? c.email : (c.email ? [c.email] : []);
+    return mail && arr.some(e => String(e && e.email ? e.email : e).toLowerCase() === mail);
+  });
+
+  const cands = candidatesCache.data || [];
+  const byName = cands.find(c => rfFullName(c).toLowerCase() === lower);
+  if (byName) return { where: 'candidates', id: byName.id, name: rfFullName(byName), on: 'name' };
+  const byMail = sameMail(cands);
+  if (byMail) return { where: 'candidates', id: byMail.id, name: rfFullName(byMail), on: 'email' };
+
+  const cts = contactsCache.data || [];
+  const ctName = cts.find(c => rfFullName(c).toLowerCase() === lower);
+  if (ctName) return { where: 'contacts', id: ctName.id, name: rfFullName(ctName), on: 'name' };
+  const ctMail = sameMail(cts);
+  if (ctMail) return { where: 'contacts', id: ctMail.id, name: rfFullName(ctMail), on: 'email' };
+
+  return null;
 }
 
 function fetchJSON(options, body) {
@@ -1937,6 +2034,12 @@ async function handleAPI(pathname, query) {
           ? JSON.stringify(rows[0]).slice(0, 700) : null
       });
     }
+    let created = null;
+    if (query.created) {
+      const c = await fetchJSON({ hostname: 'recruiterflow.com', path: '/__created',
+        method: 'GET', headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey } }).catch(() => null);
+      created = (c && c.body) || null;
+    }
     let methods = null;
     if (query.methods) {
       // Used by the test suite to prove this probe never does anything but
@@ -1945,7 +2048,7 @@ async function handleAPI(pathname, query) {
         method: 'GET', headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey } }).catch(() => null);
       methods = (m && m.body) || null;
     }
-    return { tried: out.length, results: out, methods };
+    return { tried: out.length, results: out, methods, created };
   }
 
   // The consolidation itself, without a location to centre it on — useful for
@@ -2550,6 +2653,76 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: e.message, fallback: 'tel' }));
+    }
+    return;
+  }
+
+  /* File someone who is on the calendar but in neither list. Writes to his
+     real CRM, so: he chooses candidate or contact, the duplicate check runs
+     first, and it is one request with no retry — a retried create is a second
+     person on file. */
+  if (pathname === '/api/person/create' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const name = String(body.name || '').trim();
+      const kind = body.kind === 'contact' ? 'contact' : 'candidate';
+      if (!name) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'a name is required' }));
+        return;
+      }
+
+      // Make sure the pools are warm, or the duplicate check is meaningless.
+      await getCandidates().catch(() => {});
+      if (!contactsCache.data) await getContacts().catch(() => {});
+
+      const existing = findExistingPerson(name, body.email);
+      if (existing && !body.anyway) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'already on file', existing }));
+        return;
+      }
+
+      const parts = name.split(/\s+/);
+      const made = await createInRecruiterFlow({
+        firstName: body.firstName || parts[0] || '',
+        lastName: body.lastName || parts.slice(1).join(' ') || '',
+        email: body.email, phone: body.phone, title: body.title,
+        company: body.company, city: body.city, state: body.state
+      }, kind);
+
+      if (!made.ok) {
+        console.warn(`[create] ${name} as ${kind}: ${made.error}`);
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(made));
+        return;
+      }
+
+      /* The new person must be findable immediately — he is about to look at
+         their card. Dropping the cached pools forces the next lookup to go
+         back to RecruiterFlow rather than answering from a list made before
+         this person existed. */
+      candidatesCache.expiry = 0;
+      contactsCache.expiry = 0;
+      PLACES.builtFor = null;
+
+      // A note typed before there was anywhere to put it now has a home.
+      const notes = loadNotes();
+      let noteMoved = null;
+      if (notes[name] && notes[name].text) {
+        const r = await pushNoteToRecruiterFlow(made.id, notes[name].text, kind);
+        noteMoved = r.ok ? 'pushed' : (r.error || `failed ${r.status}`);
+        notes[name] = { ...notes[name], id: made.id, kind };
+        saveNotes(notes);
+      }
+
+      console.log(`[create] ${name} filed as a ${kind}, id ${made.id}` +
+                  (noteMoved ? `, note ${noteMoved}` : ''));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, id: made.id, kind, note: noteMoved }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
     }
     return;
   }
