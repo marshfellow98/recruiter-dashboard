@@ -1891,10 +1891,24 @@ async function handleAPI(pathname, query) {
      shape rather than the contents, so it can be run safely and the answer
      decides what to build next. */
   if (pathname === '/api/debug/rfpaths') {
-    const paths = [
+    /* Which paths exist, asked with a GET and nothing else — ever. A 405 is
+       the useful answer: RecruiterFlow saying "this path is real, wrong
+       method", which is exactly how client/search gave itself away. That is
+       how the create endpoints get found without POSTing speculatively at a
+       live book of business and leaving test people in it.
+
+       `paths` lets a question be asked without another deploy. The method is
+       hardcoded and the names are sanitised, so the worst this can do is read
+       something that does not exist. */
+    const DEFAULTS = [
       'company/list', 'client/list', 'account/list', 'organization/list',
       'companies/list', 'clients/list', 'company/search', 'client/search'
     ];
+    const asked = String(query.paths || '')
+      .split(',').map(s => s.trim())
+      .filter(s => /^[a-z0-9][a-z0-9/_-]{2,48}$/i.test(s))
+      .slice(0, 24);
+    const paths = asked.length ? asked : DEFAULTS;
     const out = [];
     for (const p of paths) {
       const res = await fetchJSON({
@@ -1909,6 +1923,12 @@ async function handleAPI(pathname, query) {
       out.push({
         path: p,
         status: res.status,
+        // 405 means the path is real but wants a POST — the thing we are
+        // actually looking for when hunting a create endpoint.
+        verdict: res.status === 405 ? 'exists, needs POST'
+               : res.status === 200 ? 'exists, readable'
+               : res.status === 404 ? 'no such path'
+               : `answered ${res.status}`,
         rows: Array.isArray(rows) ? rows.length : null,
         topLevelKeys: (body && !Array.isArray(body)) ? Object.keys(body).slice(0, 12) : null,
         recordKeys: (Array.isArray(rows) && rows[0]) ? Object.keys(rows[0]) : null,
@@ -1917,7 +1937,15 @@ async function handleAPI(pathname, query) {
           ? JSON.stringify(rows[0]).slice(0, 700) : null
       });
     }
-    return { tried: out.length, results: out };
+    let methods = null;
+    if (query.methods) {
+      // Used by the test suite to prove this probe never does anything but
+      // read. Against the real API the path simply 404s.
+      const m = await fetchJSON({ hostname: 'recruiterflow.com', path: '/__rfmethods',
+        method: 'GET', headers: { 'rf-api-key': CONFIG.recruiterflow.apiKey } }).catch(() => null);
+      methods = (m && m.body) || null;
+    }
+    return { tried: out.length, results: out, methods };
   }
 
   // The consolidation itself, without a location to centre it on — useful for
