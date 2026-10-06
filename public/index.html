@@ -111,6 +111,11 @@
 
   /* Not a subtle toast. If the dashboard cannot see the calendar, that is the
      most important thing on the screen. */
+  .sched-dupe {
+    display: inline-block; margin-left: 7px; padding: 1px 6px; border-radius: 6px;
+    background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.14);
+    color: #9aa6b4; font-size: 11px; font-weight: 600; vertical-align: middle;
+  }
   .source-note {
     margin: 0 28px 14px; padding: 14px 18px; border-radius: 12px;
     background: rgba(225,161,63,0.10); border: 1px solid rgba(225,161,63,0.45);
@@ -2142,7 +2147,9 @@ function mapMeeting(e) {
     start: e.start?.dateTime,
     attendees: (e.attendees||[]).map(a=>a.emailAddress?.name).filter(Boolean),
     joinUrl: e.onlineMeeting?.joinUrl || null,
-    preview: e.bodyPreview || ''
+    preview: e.bodyPreview || '',
+    // How many copies of this meeting the server folded into this one, if any.
+    merged: e.duplicatesMerged || 0
   };
 }
 
@@ -2452,9 +2459,14 @@ function renderSchedule() {
     const tClass = isTomorrow ? ' tomorrow-item' : '';
     const category = classifyMeeting(m);
     const roleText = category === 'team' ? 'Team' : category === 'personal' ? 'Personal' : category === 'contact' ? (state.overrides[name] || 'Contact') : (findCandidate(name)||{}).title||'';
+    /* If copies were folded together, the row says so. Silently showing one
+       of three invitations would be a second kind of lying about the day. */
+    const dupe = m.merged > 1
+      ? `<span class="sched-dupe" title="${m.merged} copies of this meeting were on the calendar">×${m.merged}</span>`
+      : '';
     return `<div class="sched-item${i===state.selectedIdx?' active':''}${done?' done':''}${tClass}" onclick="selectCandidate(${i})">
       <div class="sched-time">${nowDot}${fmtTime(m.start)}</div>
-      <div class="sched-name">${name}</div>
+      <div class="sched-name">${name}${dupe}</div>
       <div class="sched-role">${roleText}</div>
     </div>`;
   }).join('');
@@ -3533,6 +3545,15 @@ function arcResize() {
   ARC.cv.width  = Math.round(ARC.w * dpr);
   ARC.cv.height = Math.round(ARC.h * dpr);
   ARC.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  /* Setting width clears the canvas, so between here and the next animation
+     frame the panel is empty. Usually that is one frame and nobody sees it;
+     under a text-size change, where the browser is busy relaying out the whole
+     page, it has been measured still blank 140ms later. Draw now, while the
+     new size is in hand, and let the frame loop take it from there. */
+  if (ARC.nodes && ARC.nodes.length) {
+    try { arcDraw(performance.now()); ARC.dirty = true; } catch (e) { ARC.dirty = true; }
+  }
 }
 
 // Pushes values apart until each has at least minGap of room, preserving
