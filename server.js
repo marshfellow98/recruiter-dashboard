@@ -1477,6 +1477,163 @@ async function getCandidates() {
    to read the day aloud — said so. Anything that is not a 2xx is an error, and
    is raised as one so the browser can say the calendar is unreachable rather
    than quietly reporting a clear morning. */
+/* Whose calendar this is. His own name is on both sides of every meeting and
+   his address is in every attendee list, so neither says anything about which
+   meeting a copy belongs to. */
+const SELF_EMAIL = process.env.MS_USER_EMAIL || '';
+const SELF_NAMES = (process.env.OWNER_NAMES || 'Shane Graham')
+  .split(',').map(x => x.trim()).filter(Boolean);
+
+/* ── The same meeting, twice ───────────────────────────────────────────────
+   A calendar collects copies. The same appointment arrives once from the
+   organiser and once from a Zoom or scheduling tool; a forwarded invite lands
+   beside the original; an event accepted on one account shows up again through
+   another. On the dashboard each copy became its own row, its own pin and its
+   own line in the spoken brief — "At 10 AM, Mick Rodgers. At 10 AM, Mick
+   Rodgers" — which is worse out loud than on screen, because there is no
+   glance that takes it in.
+
+   What this will NOT do is hide a real clash. Two different people at ten
+   o'clock is something he must hear about, so nothing merges unless it is the
+   same meeting: Outlook's own identifier for it, or the same person at the
+   same time. The copies are folded into one and the count is kept, so the row
+   can say it happened rather than quietly losing an entry. */
+
+// "Mick Rodgers and Shane Graham" / "Zoom meeting with Mick Rodgers (Copy)"
+// → "mick rodgers". The parts people's tools add are not part of the meeting.
+const SUBJECT_NOISE = [
+  /^\s*(?:copy of|fwd:|fw:|re:|invitation:|updated invitation:|canceled:|cancelled:)\s*/i,
+  /^\s*(?:zoom|teams|google meet|webex)\s+meeting\s+(?:with\s+)?/i,
+  /\s*[-–—|(]\s*(?:zoom|teams|google meet|webex|phone|call|hold|tentative|confirmed)\s*\)?\s*$/i,
+  /\s*\((?:\d+\)|copy|duplicate|no subject)\)\s*$/i
+];
+
+function normalizeSubject(subject, selfNames) {
+  let t = String(subject || '').trim();
+  for (const re of SUBJECT_NOISE) t = t.replace(re, '');
+  // The dashboard's owner is on both sides of every meeting; his name carries
+  // no information about which meeting this is.
+  for (const self of selfNames) {
+    if (!self) continue;
+    const esc = self.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    t = t.replace(new RegExp(`\\s*(?:and|&|with|/|,)\\s*${esc}\\s*`, 'ig'), ' ')
+         .replace(new RegExp(`^\\s*${esc}\\s*(?:and|&|with|/|,)\\s*`, 'i'), '');
+  }
+  return t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/* Who the meeting is with, as a sorted list of email addresses, with the owner
+   removed. Email is the one part of an invitation that does not get retyped. */
+function counterparties(e, selfEmails) {
+  const mine = new Set(selfEmails.map(x => String(x || '').toLowerCase()).filter(Boolean));
+  const out = new Set();
+  for (const a of (e.attendees || [])) {
+    const addr = String(a?.emailAddress?.address || '').toLowerCase();
+    if (addr && !mine.has(addr)) out.add(addr);
+  }
+  const org = String(e.organizer?.emailAddress?.address || '').toLowerCase();
+  if (org && !mine.has(org)) out.add(org);
+  return [...out].sort();
+}
+
+const startMs = e => Date.parse(
+  /[zZ]|[+-]\d\d:\d\d$/.test(String(e.start?.dateTime || '')) ? e.start.dateTime
+                                                              : e.start?.dateTime + 'Z');
+
+/* How good a copy is. The one kept should be the one with the most in it: a
+   live joining link beats none, an accepted invitation beats an unanswered
+   one, and a cancelled copy loses to everything. */
+function copyScore(e) {
+  let s = 0;
+  if (e.isCancelled) s -= 100;
+  if (e.onlineMeeting?.joinUrl) s += 8;
+  const r = String(e.responseStatus?.response || '').toLowerCase();
+  if (r === 'organizer') s += 6;
+  else if (r === 'accepted') s += 5;
+  else if (r === 'tentativelyaccepted') s += 2;
+  else if (r === 'declined') s -= 20;
+  s += Math.min(4, (e.attendees || []).length);
+  s += Math.min(3, Math.floor(String(e.bodyPreview || '').length / 120));
+  if (String(e.subject || '').trim()) s += 1;
+  return s;
+}
+
+const NEAR_MS = 5 * 60000;   // copies of one meeting drift by a few minutes
+
+/* Returns { events, merged } — the kept copies in their original order, each
+   carrying `duplicatesMerged` when it stood in for others. */
+function dedupeEvents(events, opts = {}) {
+  const selfEmails = [opts.selfEmail].filter(Boolean);
+  const selfNames = (opts.selfNames || []).filter(Boolean);
+  const list = (events || []).map((e, i) => ({ e, i, t: startMs(e) }));
+
+  const groups = [];
+  const byICal = new Map();
+
+  for (const item of list) {
+    const uid = String(item.e.iCalUId || '').trim();
+    // Outlook's own identifier for the appointment: the surest signal there is.
+    if (uid) {
+      const key = 'uid:' + uid;
+      if (byICal.has(key)) { byICal.get(key).push(item); continue; }
+      const g = [item]; byICal.set(key, g); groups.push(g);
+      continue;
+    }
+    /* No identifier to go on, so: the same people, at the same time, or the
+       same subject at the same time. Different people at the same time stay
+       separate — that is a clash, and he needs to hear it. */
+    const who = counterparties(item.e, selfEmails).join('|');
+    const subj = normalizeSubject(item.e.subject, selfNames);
+    const match = groups.find(g => {
+      const h = g[0];
+      /* A group formed around an identifier can still take a copy that has
+         none — a retyped invitation is exactly that, and refusing to fold it
+         in was leaving two rows where there should have been one. What a
+         group will never take is an event carrying a *different* identifier:
+         Outlook saying "these are two appointments" settles it. */
+      if (!Number.isFinite(h.t) || !Number.isFinite(item.t)) return false;
+      if (Math.abs(h.t - item.t) > NEAR_MS) return false;
+      const hWho = counterparties(h.e, selfEmails).join('|');
+      const hSubj = normalizeSubject(h.e.subject, selfNames);
+      if (who && hWho) return who === hWho;
+      return !!subj && subj === hSubj;
+    });
+    if (match) match.push(item); else groups.push([item]);
+  }
+
+  let merged = 0;
+  const kept = groups.map(g => {
+    if (g.length === 1) return g[0];
+    merged += g.length - 1;
+    const best = g.slice().sort((a, b) => copyScore(b.e) - copyScore(a.e) || a.i - b.i)[0];
+    /* Nothing is thrown away that the kept copy lacks: if the duplicate was
+       the one carrying the Zoom link or the agenda, it comes across. */
+    const e = { ...best.e };
+    /* The copy with the joining link is usually the tool's own, titled "Zoom
+       meeting with …". Where a human-written subject exists on another copy,
+       that is the better name for the row — it is what gets spoken when a
+       meeting has no attendee to name. */
+    const generic = x => /^\s*(?:zoom|teams|google meet|webex)\s+meeting\b/i.test(String(x || ''))
+                      || !String(x || '').trim();
+    if (generic(e.subject)) {
+      const better = g.map(o => o.e.subject).find(x => !generic(x));
+      if (better) e.subject = better;
+    }
+    for (const other of g) {
+      if (!e.onlineMeeting?.joinUrl && other.e.onlineMeeting?.joinUrl) {
+        e.onlineMeeting = other.e.onlineMeeting;
+      }
+      if (!String(e.bodyPreview || '').trim() && other.e.bodyPreview) e.bodyPreview = other.e.bodyPreview;
+      if ((other.e.attendees || []).length > (e.attendees || []).length) e.attendees = other.e.attendees;
+    }
+    e.duplicatesMerged = g.length;
+    return { ...best, e };
+  });
+
+  kept.sort((a, b) => a.i - b.i);
+  return { events: kept.map(k => k.e), merged };
+}
+
 function okOrThrow(res, what) {
   if (res && res.status >= 200 && res.status < 300) return res;
   const b = res && res.body;
@@ -1650,6 +1807,7 @@ async function handleAPI(pathname, query) {
         path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView` +
               `?startDateTime=${win.start}&endDateTime=${win.end}` +
               `&$select=subject,start,end,bodyPreview,onlineMeeting,attendees,isAllDay` +
+              `,iCalUId,isCancelled,responseStatus,organizer` +
               `&$orderby=start/dateTime&$top=400`,
         method: 'GET',
         /* Deliberately NOT asking Graph for local times. The browser has
@@ -1662,10 +1820,16 @@ async function handleAPI(pathname, query) {
 
       okOrThrow(res, 'The calendar');
 
+      /* Copies of one meeting are folded together before anything else looks
+         at the list, so the day strip's counts, the arc, the map and the
+         spoken brief all agree about how many meetings there are. */
+      const deduped = dedupeEvents(res.body?.value || [],
+                                   { selfEmail: SELF_EMAIL, selfNames: SELF_NAMES });
+
       const days = {};
       for (const k of keys) days[k] = [];
       let dropped = 0, allDay = 0;
-      for (const e of (res.body?.value || [])) {
+      for (const e of deduped.events) {
         /* All-day items — birthdays, out-of-office, anniversaries — start at
            midnight, so on an arc that maps time of day they pile up at one end
            and say nothing about when he is busy. Counted, not drawn. */
@@ -1675,9 +1839,11 @@ async function handleAPI(pathname, query) {
       }
       console.log(`[calendar] ${keys.length} day(s) from ${keys[0]}: ` +
                   `${(res.body?.value || []).length} events` +
+                  (deduped.merged ? `, ${deduped.merged} duplicate(s) merged` : '') +
                   (allDay ? `, ${allDay} all-day skipped` : '') +
                   (dropped ? `, ${dropped} outside the window` : ''));
       return { tz: BIZ_TZ, from: keys[0], to: keys[keys.length - 1], allDay,
+               merged: deduped.merged,
                days, counts: Object.fromEntries(keys.map(k => [k, days[k].length])) };
     }
 
@@ -1688,13 +1854,16 @@ async function handleAPI(pathname, query) {
     console.log('Fetching calendar for date:', today, w.startISO, '→', w.endISO);
     const res = await fetchJSON({
       hostname: 'graph.microsoft.com',
-      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${w.startISO}&endDateTime=${w.endISO}&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=100`,
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${w.startISO}&endDateTime=${w.endISO}&$select=subject,start,end,bodyPreview,onlineMeeting,attendees,iCalUId,isCancelled,responseStatus,organizer&$orderby=start/dateTime&$top=100`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
     console.log('Calendar response status:', res.status, 'items:', res.body?.value?.length);
     okOrThrow(res, 'The calendar');
-    return res.body;
+    const one = dedupeEvents(res.body?.value || [],
+                             { selfEmail: SELF_EMAIL, selfNames: SELF_NAMES });
+    if (one.merged) console.log(`[calendar] ${one.merged} duplicate(s) merged`);
+    return { ...res.body, value: one.events, merged: one.merged };
   }
 
   if (pathname === '/api/calendar/tomorrow') {
@@ -1702,12 +1871,14 @@ async function handleAPI(pathname, query) {
     const w = dayWindow(addDays(bizToday(), 1));
     const res = await fetchJSON({
       hostname: 'graph.microsoft.com',
-      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${w.startISO}&endDateTime=${w.endISO}&$select=subject,start,end,bodyPreview,onlineMeeting,attendees&$orderby=start/dateTime&$top=100`,
+      path: `/v1.0/users/${process.env.MS_USER_EMAIL}/calendarView?startDateTime=${w.startISO}&endDateTime=${w.endISO}&$select=subject,start,end,bodyPreview,onlineMeeting,attendees,iCalUId,isCancelled,responseStatus,organizer&$orderby=start/dateTime&$top=100`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
     okOrThrow(res, 'The calendar');
-    return res.body;
+    const tm = dedupeEvents(res.body?.value || [],
+                            { selfEmail: SELF_EMAIL, selfNames: SELF_NAMES });
+    return { ...res.body, value: tm.events, merged: tm.merged };
   }
 
   if (pathname === '/api/emails') {
