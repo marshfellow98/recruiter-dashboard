@@ -1693,38 +1693,97 @@ function findContact(name) {
 // Shane's internal team — meetings with these people are NOT candidate calls, even if
 // there happens to be a same-named candidate in RecruiterFlow. Checked before candidate
 // matching so a teammate never gets mistaken for someone being recruited.
+/* ── Who is this, and is it worth telling him about ────────────────────────
+   These were one question and they are two.
+
+   The old classifier answered "what kind of meeting is this" and the whole
+   dashboard then used that answer to decide what to say out loud — anything
+   tagged team or personal was dropped from the brief, the map and the prep.
+   So a list of three first names, written here months ago, was quietly
+   deciding which of his father's calls he got to hear about. Two of today's
+   three were missing for that reason.
+
+   Now: `classifyMeeting` says what kind of person it is, which drives colour
+   and how much preparation is worth showing. `worthShowing` says whether it is
+   a meeting with a human being at all, which is what the brief and the map go
+   on. A colleague is still a colleague, and he still hears about the call. */
+
+// Colleagues. Matched on a whole name or a lone first name, and only after
+// RecruiterFlow has had its say — a contact named Fadi is a contact.
 const TEAM_MEMBERS = ['abdul', 'swarnim', 'fadi'];
+// Addresses at his own firm, if an invite carries one.
+const TEAM_DOMAINS = ['mgmtglobal.com', 'mgmtglobalconsulting.com'];
 
-// Personal calendar blocks — time on the calendar that isn't a meeting with anyone at all.
+// Time on the calendar that is not a meeting with anyone.
 const PERSONAL_BLOCK_KEYWORDS = ['coffee', 'news', 'lunch', 'break', 'focus', 'admin'];
+// Titles that describe an activity rather than name a person.
+const NOT_A_PERSON = ['review', 'sync', 'standup', 'stand-up', 'pipeline', 'weekly',
+                      'monthly', 'planning', 'hold', 'block', 'prep', 'open', 'busy',
+                      'out of office', 'ooo', 'pto', 'travel', 'renewals', 'training',
+                      'all hands', 'all-hands', 'webinar', 'conference'];
 
-// Classifies a calendar event as 'candidate', 'team', or 'personal' so the rest of the
-// dashboard can treat each one appropriately instead of forcing candidate-style AI prep
-// onto a teammate sync or a lunch break.
+const OWNER_NAMES = ['shane graham'];
+function otherAttendees(m) {
+  return (m.attendees || [])
+    .filter(a => !OWNER_NAMES.includes(String(a || '').trim().toLowerCase()));
+}
+
+/* A title that names somebody. One capitalised word counts: Swarnim and Fadi
+   and Divya are names, and the old rule — two capitalised words — was quietly
+   deciding that people with one-word names were not people. */
+function looksLikePersonName(raw) {
+  const t = String(raw || '').trim();
+  if (!t || /[0-9@&/|]/.test(t)) return false;
+  const low = t.toLowerCase();
+  if (PERSONAL_BLOCK_KEYWORDS.some(k => low.includes(k))) return false;
+  if (NOT_A_PERSON.some(k => low.includes(k))) return false;
+  const words = t.split(/\s+/);
+  if (words.length > 3) return false;
+  const particles = ['de', 'van', 'von', 'del', 'da', 'bin', 'al'];
+  return words.every(w => particles.includes(w.toLowerCase()) || /^[A-ZÀ-Þ]/.test(w));
+}
+
+/* Is there a person in this? Anyone invited makes it a meeting; failing that,
+   a title that names somebody. This, not the category, is what decides whether
+   he hears about it — and when it is a close call it answers yes, because the
+   cost of one extra line in the brief is nothing beside the cost of silence
+   about a real call. */
+function worthShowing(m) {
+  if (!m) return false;
+  if (otherAttendees(m).length) return true;
+  return looksLikePersonName(m.title);
+}
+
+function isTeamPerson(name, m) {
+  const clean = String(name || '').trim().toLowerCase();
+  const first = clean.split(/\s+/)[0] || '';
+  if (TEAM_MEMBERS.includes(clean) || TEAM_MEMBERS.includes(first)) return true;
+  const emails = (m && m.attendeeEmails) || [];
+  return emails.some(e => TEAM_DOMAINS.some(d => String(e || '').toLowerCase().endsWith('@' + d)));
+}
+
+// What kind of person this is: colour, and how much preparation to show.
 function classifyMeeting(m) {
   const name = m.attendees?.[0] || m.title;
-  const parts = name.trim().split(' ');
-  const first = (parts[0] || '').toLowerCase();
   const titleLower = (m.title || '').toLowerCase();
 
-  // A real candidate match ALWAYS wins first — with 15,000 candidates, some will
-  // inevitably share a first name with a teammate, or have a meeting title that happens
-  // to contain a word like "focus" or "news". Never let coincidence override real data.
+  /* Real data first. With 15,000 candidates some will share a first name with
+     a colleague, and a record beats a guess every time. */
   if (findCandidate(name)) return 'candidate';
-  if (TEAM_MEMBERS.includes(first)) return 'team';
-  if (PERSONAL_BLOCK_KEYWORDS.some(kw => titleLower.includes(kw))) return 'personal';
-
-  // A real RecruiterFlow Contact record (hiring manager, referral source, etc.) — the
-  // strongest possible signal, checked before falling back to a name-pattern guess.
   if (findContact(name)) return 'contact';
 
-  // Looks like an actual person's name (two capitalized words, e.g. "James Beck") but isn't
-  // in RecruiterFlow yet — still a real contact worth showing email history and light AI
-  // prep for. This used to silently fall into 'personal' and hide genuinely useful context.
-  const looksLikeAPersonsName = /^[A-Z][a-zA-Z'-]+\s+[A-Z][a-zA-Z'-]+/.test(name.trim());
-  if (looksLikeAPersonsName) return 'contact';
+  // Then the colleague list — below RecruiterFlow, where it belongs.
+  if (isTeamPerson(name, m)) return 'team';
 
-  return 'personal'; // genuinely ambiguous single-word or non-name titles fall here
+  /* A block keyword only counts when nobody is invited. "Coffee with Divya"
+     is a meeting; "Coffee & News" at seven in the morning is not. */
+  if (!otherAttendees(m).length &&
+      PERSONAL_BLOCK_KEYWORDS.some(kw => titleLower.includes(kw))) return 'personal';
+
+  // Somebody real, not on file yet: worth his time, and worth filing.
+  if (worthShowing(m)) return 'contact';
+
+  return 'personal';
 }
 
 // ── Meeting alert system — fluffy white dog mascot + bark cues ──
@@ -2146,6 +2205,9 @@ function mapMeeting(e) {
     title: e.subject || 'Meeting',
     start: e.start?.dateTime,
     attendees: (e.attendees||[]).map(a=>a.emailAddress?.name).filter(Boolean),
+    // Addresses as well as names: an address says which firm somebody belongs
+    // to, which a display name does not.
+    attendeeEmails: (e.attendees||[]).map(a=>a.emailAddress?.address).filter(Boolean),
     joinUrl: e.onlineMeeting?.joinUrl || null,
     preview: e.bodyPreview || '',
     // How many copies of this meeting the server folded into this one, if any.
@@ -4517,10 +4579,9 @@ function dayBrief() {
   const dateSaid = keyToDate(state.currentDate)
     .toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
-  const real = meetings.filter(m => {
-    const cat = classifyMeeting(m);
-    return cat !== 'personal' && cat !== 'team';
-  });
+  // Everyone he is meeting, colleagues included. The category decides how much
+  // preparation is shown, not whether the call is mentioned at all.
+  const real = meetings.filter(worthShowing);
 
   /* "Today is Thursday, October 1" for today and tomorrow; further out the
      weekday is already inside the date, and prefixing it produced "Monday,
@@ -4563,9 +4624,12 @@ function dayBrief() {
     }
   });
 
+  /* Colleagues are not missing from RecruiterFlow; they were never meant to be
+     in it. Listing them as gaps to fill is noise in the one part of the brief
+     that asks him to do something. */
   const missing = real.filter(m => {
     const n = m.attendees?.[0] || m.title;
-    return !findCandidate(n) && !findContact(n);
+    return !findCandidate(n) && !findContact(n) && classifyMeeting(m) !== 'team';
   });
   if (missing.length) {
     lines.push(`${missing.length === 1 ? 'One name is' : missing.length + ' names are'} ` +
@@ -5032,10 +5096,7 @@ function stopSpeaking() {
    up: the sample is the real next meeting, or it is plainly a sample. */
 function sampleSentence() {
   try {
-    const real = (activeMeetings() || []).filter(m => {
-      const cat = classifyMeeting(m);
-      return cat !== 'personal' && cat !== 'team';
-    });
+    const real = (activeMeetings() || []).filter(worthShowing);
     if (real.length) {
       const m = real[0];
       const name = m.attendees?.[0] || m.title;
@@ -5146,12 +5207,11 @@ function focusPerson() {
   }
   const m = activeMeetings()[state.selectedIdx];
   if (!m) return null;
-  const cat = classifyMeeting(m);
-  if (cat === 'personal' || cat === 'team') return null;
+  if (!worthShowing(m)) return null;
   const name = m.attendees?.[0] || m.title;
   const c = findCandidate(name) || findContact(name) || {};
   return { name, geo: c.geo || null, company: c.company || '',
-           cat, idx: state.selectedIdx };
+           cat: classifyMeeting(m), idx: state.selectedIdx };
 }
 
 async function refreshNearby() {
@@ -5297,10 +5357,11 @@ function buildGeoMap() {
 
   meetings.forEach((m, i) => {
     const name = m.attendees?.[0] || m.title;
-    const cat = classifyMeeting(m);
-    // Only candidates and contacts are people with a location worth mapping;
-    // personal blocks and internal team time are not.
-    if (cat === 'personal' || cat === 'team') return;
+    /* Anyone he is actually meeting gets a pin if we know where they are —
+       a colleague he is driving to see is as much a place on the map as a
+       candidate is. Only blocks with nobody in them are skipped. */
+    if (!worthShowing(m)) return;
+    const cat = classifyMeeting(m);          // colour only, now that it no longer gates
 
     // Candidate first, then the contact book — a hiring manager has a city on
     // file just as a candidate does, and he meets more of them.
