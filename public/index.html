@@ -209,7 +209,7 @@
   }
   .speak-overlay.show { display: flex; }
   .speak-stage { display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 24px; }
-  #speak-canvas { width: 340px; height: 340px; }
+  #speak-canvas { width: 380px; height: 380px; }
   .speak-line {
     max-width: 760px; min-height: 2.4em; text-align: center;
     font-size: 30px; font-weight: 600; line-height: 1.35; color: var(--t1);
@@ -248,7 +248,7 @@
   .speak-speed.on { color: #06110c; background: var(--accent); border-color: transparent; }
   .speak-ctl.try { padding: 9px 16px; font-size: 13px; }
   @media (max-width: 760px) {
-    #speak-canvas { width: 240px; height: 240px; }
+    #speak-canvas { width: 262px; height: 262px; }
     .speak-line { font-size: 23px; }
   }
 
@@ -1303,7 +1303,7 @@
      still talking" without needing to hear it. -->
 <div class="speak-overlay" id="speak-overlay">
   <div class="speak-stage">
-    <canvas id="speak-canvas" width="340" height="340" aria-hidden="true"></canvas>
+    <canvas id="speak-canvas" width="380" height="380" aria-hidden="true"></canvas>
     <div class="speak-line" id="speak-line" role="status" aria-live="polite"></div>
     <div class="speak-controls">
       <button type="button" class="speak-ctl" id="speak-stop">■ Stop</button>
@@ -3995,7 +3995,10 @@ function arcFrame(ts) {
 
   ARC.lastDraw = ts;
   ARC.dirty = false;
-  arcDraw(ts);
+  /* If a draw throws — a layout mid-change, a canvas whose box is momentarily
+     zero — the flag has already been cleared, and without this the arc would
+     stay blank for the rest of the day rather than for one frame. */
+  try { arcDraw(ts); } catch (e) { ARC.dirty = true; }
 }
 
 function initDayArc() {
@@ -4489,8 +4492,17 @@ function dayBrief() {
    engine does report: a boundary event on every word. Each one kicks the
    energy up and it decays between them, so the ring genuinely moves with the
    speaking rather than running a loop beside it. */
-const SPEECH = { on: false, lines: [], i: 0, energy: 0, raf: null, t: 0, bars: 72,
-                 utter: null, voiceName: null, rate: 1 };
+const SPEECH = { on: false, lines: [], i: 0, energy: 0, raf: null, t: 0, last: 0,
+                 utter: null, voiceName: null, rate: 1,
+                 /* The orb's state. bands are the twenty sectors around the
+                    core; target is where each is heading for the word being
+                    said now. */
+                 bands: new Float32Array(20), target: new Float32Array(20),
+                 word: '', wordAt: -9, wordDur: 0.4, syll: 1,
+                 cadence: 0.42, progress: 0, waves: [],
+                 spin: 0, spin2: 0, spin3: 0,
+                 heardBoundary: false, ghost: null, ghostWords: [], ghostAt: 0,
+                 sampling: false };
 
 function speakSupported() { return typeof window.speechSynthesis !== 'undefined'; }
 
@@ -4543,68 +4555,298 @@ function renderVoicePicker() {
     b.classList.toggle('on', Number(b.dataset.rate) === SPEECH.rate));
 }
 
+/* ── The orb ───────────────────────────────────────────────────────────────
+   What this is drawing, and what it is not: the speech engine hands a page
+   word-boundary events and nothing else — there is no audio stream to run an
+   FFT over, so none of this is a measurement of the sound. Every movement is
+   derived from the words themselves. Each word sets off a swell as long as the
+   word takes to say, rippled by its syllables; its letters pick which of the
+   twenty bands around the core light up, so no two words look alike; and the
+   spin follows the cadence actually measured between boundaries, so a faster
+   voice drives a livelier orb. Between lines it breathes rather than dying.
+
+   The one piece of information in here that is not decoration is the gold arc
+   around the outside: how much of the brief is left, which is the question
+   anyone listening to their own schedule actually has. */
+const ORB_GREEN = [0, 208, 132], ORB_GOLD = [225, 161, 63], ORB_ICE = [223, 230, 238];
+const orbRGBA = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${Math.max(0, a).toFixed(3)})`;
+
+function syllablesIn(w) {
+  const m = String(w).toLowerCase().replace(/[^a-z]/g, '').match(/[aeiouy]+/g);
+  return Math.max(1, m ? m.length : 1);
+}
+
+/* Everything a word does to the orb, in one place. */
+function orbWord(word, rate) {
+  const w = String(word || '').trim() || 'a';
+  let h = 2166136261;
+  for (let i = 0; i < w.length; i++) { h ^= w.charCodeAt(i); h = (h * 16777619) >>> 0; }
+  SPEECH.word = w;
+  SPEECH.syll = syllablesIn(w);
+  SPEECH.wordDur = Math.max(0.17, (0.052 * w.length + 0.10 * SPEECH.syll) / (rate || SPEECH.rate || 1));
+  if (SPEECH.wordAt > -1) {
+    // Cadence, measured rather than assumed: a rolling average of the gap
+    // between words as this voice actually says them.
+    const gap = SPEECH.t - SPEECH.wordAt;
+    if (gap > 0.04 && gap < 1.6) SPEECH.cadence += (gap - SPEECH.cadence) * 0.3;
+  }
+  SPEECH.wordAt = SPEECH.t;
+  for (let i = 0; i < SPEECH.target.length; i++) {
+    const r = Math.abs(Math.sin((h % 9973) * 0.0137 + i * 1.73) * 43758.5453) % 1;
+    SPEECH.target[i] = 0.30 + 0.70 * r;
+  }
+  // The longer words — the names, the firms, the places — throw off a ring.
+  if (w.length >= 5 && SPEECH.waves.length < 4) {
+    SPEECH.waves.push({ at: SPEECH.t, power: Math.min(1, w.length / 9) });
+  }
+}
+
+function orbEnvelope() {
+  const age = SPEECH.t - SPEECH.wordAt;
+  if (age > SPEECH.wordDur * 1.9) return 0.11 + 0.05 * Math.sin(SPEECH.t * 1.3);  // idle breath
+  const u = Math.min(1, age / SPEECH.wordDur);
+  const attack = Math.min(1, age / 0.05);
+  const decay = Math.pow(1 - u, 0.75);
+  const ripple = 0.70 + 0.30 * Math.sin(u * Math.PI * SPEECH.syll * 2 - Math.PI / 2);
+  return Math.max(0, attack * decay * ripple);
+}
+
+// ── Three dimensions on a flat canvas ──────────────────────────────────────
+const ORB_TILT = 0.40, ORB_FOV = 640;
+function orbProject(x, y, z, cx, cy) {
+  const ct = Math.cos(ORB_TILT), st = Math.sin(ORB_TILT);
+  const y2 = y * ct - z * st, z2 = y * st + z * ct;
+  const s = ORB_FOV / (ORB_FOV + z2);
+  return [cx + x * s, cy + y2 * s, z2, s];
+}
+function orbBandAt(theta) {
+  const n = SPEECH.bands.length;
+  const f = (((theta / (Math.PI * 2)) % 1) + 1) % 1 * n;
+  const i = Math.floor(f), j = (i + 1) % n, k = f - i;
+  return SPEECH.bands[i] * (1 - k) + SPEECH.bands[j] * k;
+}
+/* A point on a ring of radius r, in a plane tilted by `inc` and turned by
+   `spin`. One helper serves the crowns, the gyroscopes and the shockwaves. */
+function orbRingPoint(th, r, inc, spin, cx, cy) {
+  const x0 = Math.cos(th) * r, z0 = Math.sin(th) * r;
+  const y1 = -z0 * Math.sin(inc), z1 = z0 * Math.cos(inc);
+  const x2 = x0 * Math.cos(spin) + z1 * Math.sin(spin);
+  const z2 = -x0 * Math.sin(spin) + z1 * Math.cos(spin);
+  return orbProject(x2, y1, z2, cx, cy);
+}
+
 function drawSpeakRing(ts) {
   const cv = document.getElementById('speak-canvas');
   if (!cv) return;
   const ctx = cv.getContext('2d');
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const cssW = cv.clientWidth || 340, cssH = cv.clientHeight || 340;
-  if (cv.width !== Math.round(cssW * dpr)) {
-    cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
-  }
+  const W = cv.clientWidth || 380, H = cv.clientHeight || 380;
+  if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, cssW, cssH);
+  ctx.clearRect(0, 0, W, H);
 
-  const cx = cssW / 2, cy = cssH / 2;
-  const base = Math.min(cssW, cssH) * 0.29;
+  const cx = W / 2, cy = H / 2, R = Math.min(W, H) * 0.225;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  SPEECH.t = ts / 1000;
+  const now = ts / 1000;
+  const dt = Math.min(0.05, SPEECH.last ? now - SPEECH.last : 0.016);
+  SPEECH.last = now; SPEECH.t = now;
+
+  const env = orbEnvelope();
+  SPEECH.energy += (env - SPEECH.energy) * Math.min(1, dt * 10);
   const e = SPEECH.energy;
 
-  const halo = ctx.createRadialGradient(cx, cy, base * 0.5, cx, cy, base * 2);
-  halo.addColorStop(0, `rgba(0,208,132,${(0.12 + e * 0.22).toFixed(3)})`);
-  halo.addColorStop(1, 'rgba(0,208,132,0)');
-  ctx.fillStyle = halo;
-  ctx.beginPath(); ctx.arc(cx, cy, base * 2, 0, Math.PI * 2); ctx.fill();
-
-  // Each bar carries its own phase, so the ring breathes rather than pulsing
-  // as one lump.
-  for (let i = 0; i < SPEECH.bars; i++) {
-    const a = (i / SPEECH.bars) * Math.PI * 2 - Math.PI / 2;
-    const wobble = reduced ? 0.5
-      : 0.5 + 0.5 * Math.sin(SPEECH.t * 2.1 + i * 0.37) * Math.sin(SPEECH.t * 0.9 + i * 0.11);
-    const len = base * (0.1 + (0.08 + e * 0.52) * wobble);
-    ctx.beginPath();
-    ctx.moveTo(cx + Math.cos(a) * base, cy + Math.sin(a) * base);
-    ctx.lineTo(cx + Math.cos(a) * (base + len), cy + Math.sin(a) * (base + len));
-    ctx.lineWidth = 2.4;
-    ctx.strokeStyle = `rgba(0,208,132,${(0.3 + e * 0.6).toFixed(3)})`;
-    ctx.stroke();
+  const chase = Math.min(1, dt * (5 + 6 / Math.max(0.18, SPEECH.cadence)));
+  for (let i = 0; i < SPEECH.bands.length; i++) {
+    SPEECH.bands[i] += (SPEECH.target[i] * env - SPEECH.bands[i]) * chase;
   }
-
-  ctx.beginPath(); ctx.arc(cx, cy, base, 0, Math.PI * 2);
-  ctx.lineWidth = 1.6;
-  ctx.strokeStyle = `rgba(223,230,238,${(0.35 + e * 0.4).toFixed(3)})`;
-  ctx.stroke();
-
-  const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, base * 0.8);
-  core.addColorStop(0, `rgba(0,208,132,${(0.22 + e * 0.3).toFixed(3)})`);
-  core.addColorStop(1, 'rgba(0,208,132,0)');
-  ctx.fillStyle = core;
-  ctx.beginPath(); ctx.arc(cx, cy, base * 0.8, 0, Math.PI * 2); ctx.fill();
-
-  // A slow sweep, so it reads as listening even between words.
   if (!reduced) {
-    const sweep = (SPEECH.t * 0.6) % (Math.PI * 2);
+    const pace = 0.32 + 0.55 * e + 0.10 / Math.max(0.2, SPEECH.cadence);
+    SPEECH.spin  += dt * pace * 0.55;
+    SPEECH.spin2 -= dt * pace * 0.34;
+    SPEECH.spin3 += dt * pace * 0.22;
+  }
+
+  const haze = ctx.createRadialGradient(cx, cy, R * 0.2, cx, cy, R * 3.1);
+  haze.addColorStop(0, orbRGBA(ORB_GREEN, 0.07 + e * 0.13));
+  haze.addColorStop(0.45, orbRGBA(ORB_GREEN, 0.02 + e * 0.04));
+  haze.addColorStop(1, 'rgba(0,208,132,0)');
+  ctx.fillStyle = haze;
+  ctx.fillRect(0, 0, W, H);
+
+  /* Two crowns of bars in planes that cross: this is where the voice shows.
+     Each bar is one band standing off the core, drawn in two passes so the
+     core sits between the far half and the near half. */
+  const crowns = [
+    { inc: 0.26, spin: SPEECH.spin,        n: 46, w: 2.8, len: 1.10, col: ORB_GREEN },
+    { inc: 1.28, spin: -SPEECH.spin * 0.8, n: 34, w: 2.0, len: 0.86, col: ORB_GOLD }
+  ];
+  const drawCrown = (c, front) => {
+    for (let k = 0; k < c.n; k++) {
+      const th = (k / c.n) * Math.PI * 2;
+      const amp = Math.max(0, orbBandAt(th + c.spin));
+      const r0 = R * 1.06, r1 = R * (1.06 + c.len * (0.12 + amp * 0.95));
+      const a = orbRingPoint(th, r0, c.inc, c.spin, cx, cy);
+      if (front === (a[2] < 0)) continue;
+      const b = orbRingPoint(th, r1, c.inc, c.spin, cx, cy);
+      const depth = (a[2] / R + 1) / 2;
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]);
+      ctx.lineCap = 'round';
+      ctx.lineWidth = c.w * a[3] * (front ? 1 : 0.6);
+      ctx.strokeStyle = orbRGBA(c.col, (front ? 0.34 + e * 0.6 : 0.10 + e * 0.16) * (0.45 + depth * 0.55));
+      ctx.stroke();
+    }
+  };
+
+  /* Gyroscopes: rings on their own axes at their own speeds. They are what
+     makes it read as an instrument rather than a graphic. */
+  const gyros = [
+    { r: 1.64, inc: 0.18, spin: SPEECH.spin2,        col: ORB_GREEN, w: 1.5, gap: 0 },
+    { r: 1.86, inc: 1.22, spin: SPEECH.spin3 * 1.3,  col: ORB_GOLD,  w: 1.2, gap: 4 },
+    { r: 2.06, inc: 0.70, spin: -SPEECH.spin2 * 0.7, col: ORB_ICE,   w: 1.0, gap: 6 }
+  ];
+  const drawGyro = (g, front) => {
+    const SEG = 110;
+    for (let i = 0; i < SEG; i++) {
+      if (g.gap && i % g.gap === g.gap - 1) continue;
+      const a = orbRingPoint((i / SEG) * Math.PI * 2, R * g.r, g.inc, g.spin, cx, cy);
+      if (front === (a[2] < 0)) continue;
+      const b = orbRingPoint(((i + 1) / SEG) * Math.PI * 2, R * g.r, g.inc, g.spin, cx, cy);
+      const depth = (a[2] / (R * g.r) + 1) / 2;
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]);
+      ctx.lineWidth = g.w * (0.45 + depth * 0.95);
+      ctx.strokeStyle = orbRGBA(g.col, (0.13 + depth * 0.40) * (0.55 + e * 0.7));
+      ctx.stroke();
+    }
+  };
+
+  const drawMotes = (front) => {
+    for (let i = 0; i < 30; i++) {
+      const seed = i * 2.399;
+      const rr = R * (1.35 + 0.72 * ((Math.sin(seed * 3.1) + 1) / 2));
+      const inc = Math.sin(seed) * 1.2;
+      const th = SPEECH.spin * (0.5 + (i % 5) * 0.18) + seed * 2.1;
+      const a = orbRingPoint(th, rr, inc, 0, cx, cy);
+      if (front === (a[2] < 0)) continue;
+      const depth = (a[2] / rr + 1) / 2;
+      ctx.beginPath();
+      ctx.arc(a[0], a[1], (0.7 + depth * 1.6) * a[3], 0, Math.PI * 2);
+      ctx.fillStyle = orbRGBA(i % 7 === 0 ? ORB_GOLD : ORB_GREEN, (0.10 + depth * 0.4) * (0.5 + e * 0.8));
+      ctx.fill();
+    }
+  };
+
+  gyros.forEach(g => drawGyro(g, false));
+  crowns.forEach(c => drawCrown(c, false));
+  drawMotes(false);
+
+  /* The core: a lit ball rather than a flat disc. The highlight sits up and to
+     the left, the body falls away from it, and a hard rim keeps the edge
+     crisp — which is most of what makes a circle read as a sphere. */
+  const body = ctx.createRadialGradient(cx - R * 0.34, cy - R * 0.38, R * 0.05, cx, cy, R);
+  body.addColorStop(0, orbRGBA(ORB_ICE, 0.30 + e * 0.55));
+  body.addColorStop(0.28, orbRGBA(ORB_GREEN, 0.30 + e * 0.42));
+  body.addColorStop(0.75, orbRGBA(ORB_GREEN, 0.10 + e * 0.16));
+  body.addColorStop(1, 'rgba(0,30,22,0.35)');
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.fillStyle = body; ctx.fill();
+
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = orbRGBA(ORB_GREEN, 0.45 + e * 0.45);
+  ctx.shadowColor = orbRGBA(ORB_GREEN, 0.45 * (0.3 + e)); ctx.shadowBlur = 16 * (0.3 + e);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // A meridian that turns with the orb, so it reads as a ball rotating rather
+  // than a lamp pulsing.
+  if (!reduced) {
+    const k = Math.cos(SPEECH.spin);
     ctx.beginPath();
-    ctx.arc(cx, cy, base * 0.88, sweep, sweep + 0.5);
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(0,208,132,0.55)';
+    ctx.ellipse(cx, cy, Math.abs(R * k), R, 0, 0, Math.PI * 2);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = orbRGBA(ORB_ICE, 0.10 + e * 0.16);
     ctx.stroke();
   }
 
-  SPEECH.energy = Math.max(0, SPEECH.energy - 0.022);
-  if (SPEECH.on) SPEECH.raf = requestAnimationFrame(drawSpeakRing);
+  drawMotes(true);
+  crowns.forEach(c => drawCrown(c, true));
+  gyros.forEach(g => drawGyro(g, true));
+
+  // Rings thrown off on the longer words.
+  SPEECH.waves = SPEECH.waves.filter(w => SPEECH.t - w.at < 1.1);
+  for (const w of SPEECH.waves) {
+    const u = (SPEECH.t - w.at) / 1.1;
+    const rr = R * (1.1 + u * 1.9);
+    ctx.beginPath();
+    for (let i = 0; i <= 64; i++) {
+      const p = orbRingPoint((i / 64) * Math.PI * 2, rr, 0, SPEECH.spin, cx, cy);
+      i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]);
+    }
+    ctx.lineWidth = 2 * (1 - u) + 0.4;
+    ctx.strokeStyle = orbRGBA(ORB_GREEN, (1 - u) * (1 - u) * 0.5 * w.power);
+    ctx.stroke();
+  }
+
+  // How much of the brief is left.
+  const pr = Math.max(0, Math.min(1, SPEECH.progress));
+  const PR = Math.min(W, H) * 0.465;
+  ctx.beginPath(); ctx.arc(cx, cy, PR, 0, Math.PI * 2);
+  ctx.lineWidth = 1; ctx.strokeStyle = orbRGBA(ORB_ICE, 0.09); ctx.stroke();
+  if (pr > 0) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, PR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pr);
+    ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+    ctx.strokeStyle = orbRGBA(ORB_GOLD, 0.66);
+    ctx.stroke();
+  }
+
+  if (SPEECH.on || SPEECH.sampling) SPEECH.raf = requestAnimationFrame(drawSpeakRing);
+  else SPEECH.raf = null;
+}
+
+/* ── When the voice will not say where it is ───────────────────────────────
+   Boundary events are the only signal there is, and some voices never send
+   them — Chrome's network voices in particular. Rather than leave the orb
+   sitting dead through a whole brief, pace it from the text at the rate the
+   voice was asked to read at, and drop the pretence the moment a real
+   boundary arrives. */
+function orbGhostStart(text, rate) {
+  orbGhostStop();
+  SPEECH.heardBoundary = false;
+  SPEECH.ghostWords = String(text || '').split(/\s+/).filter(Boolean);
+  SPEECH.ghostAt = 0;
+  SPEECH.ghost = setTimeout(function step() {
+    if (SPEECH.heardBoundary || !(SPEECH.on || SPEECH.sampling) ||
+        SPEECH.ghostAt >= SPEECH.ghostWords.length) return;
+    const w = SPEECH.ghostWords[SPEECH.ghostAt++];
+    orbWord(w, rate);
+    SPEECH.ghost = setTimeout(step, Math.max(110, SPEECH.wordDur * 820));
+  }, 420);
+}
+function orbGhostStop() {
+  if (SPEECH.ghost) { clearTimeout(SPEECH.ghost); SPEECH.ghost = null; }
+}
+
+/* The word being said right now, from the boundary event's index into the
+   text. charLength is not sent by every engine, so fall back to reading to the
+   next space. */
+function wordAtBoundary(text, ev) {
+  const s = String(text || '');
+  const i = Math.max(0, Math.min(s.length - 1, ev.charIndex || 0));
+  if (ev.charLength > 0) return s.substr(i, ev.charLength);
+  const rest = s.slice(i);
+  return (rest.match(/^\S+/) || [rest.slice(0, 8)])[0];
+}
+
+function orbOnBoundary(text, ev, rate) {
+  SPEECH.heardBoundary = true;
+  orbGhostStop();
+  orbWord(wordAtBoundary(text, ev), rate);
+  // Progress: whole lines done, plus how far into this one.
+  if (SPEECH.lines.length) {
+    const within = String(text || '').length ? (ev.charIndex || 0) / String(text).length : 0;
+    SPEECH.progress = Math.min(1, ((SPEECH.i - 1) + within) / SPEECH.lines.length);
+  }
 }
 
 function speakNext() {
@@ -4614,25 +4856,36 @@ function speakNext() {
   const el = document.getElementById('speak-line');
   if (el) el.textContent = text;
 
-  if (!speakSupported()) { SPEECH.timer = setTimeout(speakNext, 2600); return; }
+  if (!speakSupported()) {
+    // No voice on this machine: the words still march across the screen, and
+    // the orb still moves with them, paced from the text.
+    orbGhostStart(text, SPEECH.rate);
+    SPEECH.progress = Math.min(1, SPEECH.i / SPEECH.lines.length);
+    SPEECH.timer = setTimeout(speakNext, 2600);
+    return;
+  }
 
   const u = new SpeechSynthesisUtterance(text);
   u.rate = SPEECH.rate || 1; u.pitch = 1;
   const voice = chosenVoice();
-  if (voice) u.voice = voice;
-  u.onboundary = () => { SPEECH.energy = Math.min(1, SPEECH.energy + 0.5); };
-  u.onend = () => { SPEECH.timer = setTimeout(speakNext, 180); };
-  u.onerror = () => { SPEECH.timer = setTimeout(speakNext, 180); };
+  // A voice that vanished between the list being read and this line — an OS
+  // update, a removed language pack — must not take the whole brief with it.
+  try { if (voice) u.voice = voice; } catch (err) { console.warn('[speak] voice rejected:', err.message); }
+  u.onboundary = ev => orbOnBoundary(text, ev, u.rate);
+  u.onend = () => { orbGhostStop(); SPEECH.timer = setTimeout(speakNext, 180); };
+  u.onerror = () => { orbGhostStop(); SPEECH.timer = setTimeout(speakNext, 180); };
   SPEECH.utter = u;
   try {
     speechSynthesis.speak(u);
+    // In case this voice never reports where it is.
+    orbGhostStart(text, u.rate);
   } catch (e) {
     /* If the engine refuses — no voices installed, a locked-down browser, a
        platform that throws rather than failing quietly — the brief carries on
        as words on screen, paced to be readable. Stopping dead at line one
        with no explanation is the one outcome worth engineering against. */
     console.warn('[speak] voice unavailable, showing the text instead:', e.message);
-    SPEECH.energy = Math.min(1, SPEECH.energy + 0.5);
+    orbGhostStart(text, SPEECH.rate);
     SPEECH.timer = setTimeout(speakNext, 2600);
   }
 }
@@ -4643,7 +4896,15 @@ function startSpeaking() {
   SPEECH.lines = dayBrief();
   SPEECH.i = 0;
   SPEECH.on = true;
+  // A clean slate for the orb, or it opens mid-swell from the last brief.
   SPEECH.energy = 0.35;
+  SPEECH.progress = 0;
+  SPEECH.waves = [];
+  SPEECH.wordAt = -9;
+  SPEECH.cadence = 0.42;
+  SPEECH.last = 0;
+  SPEECH.bands.fill(0);
+  SPEECH.target.fill(0.5);
   overlay.classList.add('show');
   renderVoicePicker();
   const btn = document.getElementById('speak-btn');
@@ -4662,7 +4923,9 @@ function startSpeaking() {
 
 function stopSpeaking() {
   SPEECH.on = false;
+  SPEECH.sampling = false;
   clearTimeout(SPEECH.timer);
+  orbGhostStop();
   if (SPEECH.raf) { cancelAnimationFrame(SPEECH.raf); SPEECH.raf = null; }
   if (speakSupported()) { try { speechSynthesis.cancel(); } catch (e) {} }
   const overlay = document.getElementById('speak-overlay');
@@ -4680,9 +4943,15 @@ function speakSample(voiceName, rate) {
     const v = usableVoices().find(x => x.name === voiceName);
     if (v) u.voice = v;
     u.rate = rate || 1;
-    u.onboundary = () => { SPEECH.energy = Math.min(1, SPEECH.energy + 0.5); };
+    u.onboundary = ev => orbOnBoundary(u.text, ev, u.rate);
+    // The sample drives the orb too — choosing a voice should look like what
+    // it is going to look like, not like a still picture.
+    SPEECH.sampling = true;
+    u.onend = () => { SPEECH.sampling = false; orbGhostStop(); };
+    u.onerror = u.onend;
     if (!SPEECH.raf) SPEECH.raf = requestAnimationFrame(drawSpeakRing);
     speechSynthesis.speak(u);
+    orbGhostStart(u.text, u.rate);
   } catch (e) { console.warn('[speak] sample failed:', e.message); }
 }
 
