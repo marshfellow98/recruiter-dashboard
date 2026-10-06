@@ -1469,6 +1469,24 @@ async function getCandidates() {
   }
 }
 
+/* A failed request must not come back looking like an empty one.
+
+   Graph answering 500, or an expired token answering 401, used to arrive here
+   as a body with no `value` in it, which the handlers passed straight through
+   as "no meetings". The dashboard then drew a free day, and — once it learned
+   to read the day aloud — said so. Anything that is not a 2xx is an error, and
+   is raised as one so the browser can say the calendar is unreachable rather
+   than quietly reporting a clear morning. */
+function okOrThrow(res, what) {
+  if (res && res.status >= 200 && res.status < 300) return res;
+  const b = res && res.body;
+  const detail = (b && (b.error?.message || b.error_description || b.message))
+              || `HTTP ${res && res.status}`;
+  const err = new Error(`${what} is unreachable: ${detail}`);
+  err.upstreamStatus = res && res.status;
+  throw err;
+}
+
 async function handleAPI(pathname, query) {
 
   // Debug single candidate detail
@@ -1642,6 +1660,8 @@ async function handleAPI(pathname, query) {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
+      okOrThrow(res, 'The calendar');
+
       const days = {};
       for (const k of keys) days[k] = [];
       let dropped = 0, allDay = 0;
@@ -1673,6 +1693,7 @@ async function handleAPI(pathname, query) {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     console.log('Calendar response status:', res.status, 'items:', res.body?.value?.length);
+    okOrThrow(res, 'The calendar');
     return res.body;
   }
 
@@ -1685,6 +1706,7 @@ async function handleAPI(pathname, query) {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${token}` }
     });
+    okOrThrow(res, 'The calendar');
     return res.body;
   }
 
