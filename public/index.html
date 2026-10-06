@@ -109,6 +109,22 @@
   @keyframes wxStormPulse { 0%,100%{ border-color: rgba(255,69,58,0.5); } 50%{ border-color: rgba(255,69,58,0.85); } }
   @keyframes wxFlash { 0%,88%,100%{ opacity: 1; } 90%{ opacity: 0.3; } 92%{ opacity: 1; } }
 
+  /* Not a subtle toast. If the dashboard cannot see the calendar, that is the
+     most important thing on the screen. */
+  .source-note {
+    margin: 0 28px 14px; padding: 14px 18px; border-radius: 12px;
+    background: rgba(225,161,63,0.10); border: 1px solid rgba(225,161,63,0.45);
+    color: #f0cf9a; font-size: 17px; font-weight: 600; line-height: 1.45;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .source-note .sn-mark { font-size: 20px; flex: none; }
+  .source-note .sn-sub { font-weight: 500; color: #cbb28a; font-size: 15px; }
+  .source-note button {
+    margin-left: auto; flex: none; background: rgba(225,161,63,0.16);
+    border: 1px solid rgba(225,161,63,0.5); color: #f0cf9a; border-radius: 9px;
+    padding: 8px 15px; font: inherit; font-size: 15px; cursor: pointer;
+  }
+  .source-note button:hover { background: rgba(225,161,63,0.26); }
   .weather-alert-strip {
     margin-bottom: 16px; padding: 12px 18px; border-radius: 12px;
     background: rgba(255,69,58,0.1); border: 1px solid rgba(255,69,58,0.4);
@@ -1298,6 +1314,10 @@
   </div>
 </div>
 
+<!-- When a feed cannot be reached. Big, and above everything, because the
+     failure mode this replaces was a screen that looked like a free day. -->
+<div class="source-note" id="source-note" role="status" aria-live="polite" style="display:none;"></div>
+
 <!-- The spoken brief. Large type and a voice at the same time, because the
      person this is for reads screens with difficulty. The ring answers "is it
      still talking" without needing to hear it. -->
@@ -1471,8 +1491,68 @@ const state = {
   days: {},           // 'YYYY-MM-DD' -> meetings, a week at a time
   currentDate: null,  // which of them he is looking at; set at boot
   viewing: null,      // candidate opened from search; overrides the meeting card
-  localNotes: {}      // notes typed in the dashboard, keyed by candidate name
+  localNotes: {},     // notes typed in the dashboard, keyed by candidate name
+  sources: {}         // which feeds answered, and which did not: see noteSource
 };
+
+/* ── What is actually known, versus what could not be reached ──────────────
+   This dashboard used to carry a set of invented meetings — Sarah Chen at
+   nine, Marcus Webb at half past ten — and show them whenever the calendar
+   came back empty or failed. For someone who reads the screen with difficulty
+   and now has it read aloud, that is the worst thing a tool can do: state
+   fiction in the same voice it states fact. The demo data is gone. When a feed
+   cannot be reached the dashboard says so, on screen and out loud, and shows
+   nothing in its place.
+
+   An empty answer and a failed one are different and are kept apart: a day
+   with nothing on it is a real answer worth hearing. */
+function noteSource(name, status, detail) {
+  state.sources[name] = { status, detail: detail || '', at: Date.now() };
+  try { renderSourceNote(); } catch (e) {}
+}
+function failedSources() {
+  return Object.entries(state.sources)
+    .filter(([, v]) => v.status === 'failed')
+    .map(([k]) => k);
+}
+const SOURCE_LABELS = { calendar: 'the calendar', recruiterflow: 'RecruiterFlow',
+                        contacts: 'RecruiterFlow contacts', email: 'email', calls: 'call history' };
+
+/* Said plainly, and said first. "The schedule below may be incomplete" is the
+   part that matters: it tells him not to trust an empty day. */
+function sourceNoteText() {
+  const bad = failedSources();
+  if (!bad.length) return null;
+  const names = bad.map(k => SOURCE_LABELS[k] || k);
+  const list = names.length === 1 ? names[0]
+             : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  const calendarGone = bad.includes('calendar');
+  return {
+    head: `Can't reach ${list} right now.`,
+    sub: calendarGone ? 'The schedule below may be incomplete — this is not a free day.'
+                      : 'Names and numbers below may be missing.',
+    spoken: calendarGone
+      ? `Careful: I can't reach the calendar right now, so this may be incomplete.`
+      : `Careful: I can't reach ${list} right now, so some details may be missing.`
+  };
+}
+
+function renderSourceNote() {
+  const el = document.getElementById('source-note');
+  if (!el) return;
+  const note = sourceNoteText();
+  if (!note) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = `<span class="sn-mark" aria-hidden="true">⚠</span>` +
+                 `<span>${esc(note.head)} <span class="sn-sub">${esc(note.sub)}</span></span>` +
+                 `<button type="button" id="sn-retry">Try again</button>`;
+  const btn = document.getElementById('sn-retry');
+  if (btn) btn.addEventListener('click', () => {
+    btn.textContent = 'Trying…';
+    btn.disabled = true;
+    loadAll();
+  });
+}
 
 /* ── A week instead of two days ────────────────────────────────────────────
    The schedule used to live in two fields, todayMeetings and tomorrowMeetings,
@@ -2015,12 +2095,16 @@ async function aiCall(systemPrompt, userContent) {
 async function loadCalendar() {
   try {
     const data = await apiFetch('/api/calendar');
-    if (data.value && data.value.length) {
-      state.todayMeetings = data.value.map(mapMeeting);
-      return;
-    }
-  } catch(e) { console.warn('Calendar:', e.message); }
-  useDemoMeetings();
+    state.todayMeetings = (data.value || []).map(mapMeeting);
+    noteSource('calendar', 'ok');
+  } catch (e) {
+    /* No invented day here. An empty schedule that is actually empty and one
+       the dashboard could not read are different things, and only one of them
+       is safe to stay quiet about. */
+    console.warn('Calendar:', e.message);
+    state.todayMeetings = [];
+    noteSource('calendar', 'failed', e.message);
+  }
 }
 
 /* The whole week in one request. Each day keeps its own list, so moving
@@ -2043,12 +2127,13 @@ async function loadWeek() {
 async function loadTomorrowCalendar() {
   try {
     const data = await apiFetch('/api/calendar/tomorrow');
-    if (data.value && data.value.length) {
-      state.tomorrowMeetings = data.value.map(mapMeeting);
-      return;
-    }
-  } catch(e) { console.warn('Tomorrow calendar:', e.message); }
-  useDemoTomorrowMeetings();
+    state.tomorrowMeetings = (data.value || []).map(mapMeeting);
+    noteSource('calendar', 'ok');
+  } catch (e) {
+    console.warn('Tomorrow calendar:', e.message);
+    state.tomorrowMeetings = [];
+    noteSource('calendar', 'failed', e.message);
+  }
 }
 
 function mapMeeting(e) {
@@ -2143,10 +2228,14 @@ async function loadCandidates(names) {
     if (list.length) {
       list.forEach(c => { const rec = mapCandidateRecord(c); if (rec) state.candidates[rec.name] = rec; });
       console.log(`[loadCandidates] Resolved ${list.length}/${wanted.length} scheduled attendees from RecruiterFlow.`);
-      return;
     }
-  } catch(e) { console.warn('RecruiterFlow:', e.message); }
-  useDemoCandidates();
+    // Nobody matched is a real answer — these may simply be people he has not
+    // filed yet, which the brief already points out by name.
+    noteSource('recruiterflow', 'ok');
+  } catch (e) {
+    console.warn('RecruiterFlow:', e.message);
+    noteSource('recruiterflow', 'failed', e.message);
+  }
 }
 
 async function loadContacts() {
@@ -2178,7 +2267,11 @@ async function loadContacts() {
       });
       console.log(`[loadContacts] Loaded ${list.length} contacts from RecruiterFlow. First few:`, Object.keys(state.contacts).slice(0,10));
     }
-  } catch(e) { console.warn('RecruiterFlow contacts:', e.message); }
+    noteSource('contacts', 'ok');
+  } catch (e) {
+    console.warn('RecruiterFlow contacts:', e.message);
+    noteSource('contacts', 'failed', e.message);
+  }
 }
 
 // ── Manual label overrides ──────────────────────────────────
@@ -2258,38 +2351,6 @@ async function loadCalls(name) {
     })
     .map(r=>({ direction:r.direction, duration:r.duration, startTime:r.startTime, result:r.result }));
   state.callsStatus[name] = _allCallsFailed ? 'error' : 'ok';
-}
-
-// ── Demo fallbacks ────────────────────────────
-function useDemoMeetings() {
-  const b = new Date(); b.setHours(9,0,0,0);
-  const t=(h,m)=>{ const d=new Date(b); d.setHours(h,m); return d.toISOString(); };
-  state.todayMeetings = [
-    { title:'Sarah Chen',   start:t(9,0),  attendees:['Sarah Chen'],   joinUrl:null },
-    { title:'Marcus Webb',  start:t(10,30),attendees:['Marcus Webb'],  joinUrl:null },
-    { title:'Priya Nair',   start:t(14,0), attendees:['Priya Nair'],   joinUrl:'https://zoom.us/j/demo' },
-    { title:'James Torres', start:t(16,0), attendees:['James Torres'], joinUrl:null }
-  ];
-}
-function useDemoTomorrowMeetings() {
-  const b = new Date(); b.setDate(b.getDate()+1); b.setHours(9,0,0,0);
-  const t=(h,m)=>{ const d=new Date(b); d.setHours(h,m); return d.toISOString(); };
-  state.tomorrowMeetings = [
-    { title:'David Park',   start:t(10,0), attendees:['David Park'],   joinUrl:null },
-    { title:'Lisa Romero',  start:t(13,30),attendees:['Lisa Romero'],  joinUrl:'https://zoom.us/j/demo2' },
-    { title:'Tom Bradley',  start:t(15,0), attendees:['Tom Bradley'],  joinUrl:null }
-  ];
-}
-function useDemoCandidates() {
-  state.candidates = {
-    'Priya Nair':   { name:'Priya Nair',   title:'Associate Actuary II', company:'Travelers Insurance',email:'priya.nair@email.com',  phone:'(617) 555-0148',linkedin:'https://linkedin.com/in/priyanair',  stage:'First Call',  notes:'Strong personal auto reserving background. Studying for FCAS exam 8 this fall. Interested in moving to a smaller carrier with more visibility. Follow up on exam timeline and post-exam comp expectations.',salary:'$135–155k',location:'Boston, MA',geo:{lat:42.358,lon:-71.060,city:'Boston',state:'MA',precision:'city'},tags:['FCAS Candidate','8 yrs exp'] },
-    'James Torres': { name:'James Torres', title:'Loss Control Manager',  company:'Liberty Mutual',    email:'j.torres@email.com',    phone:'(312) 555-0293',linkedin:'https://linkedin.com/in/jamestorres',stage:'First Call',  notes:'Referred by Marcus Webb. CSP certified, heavy commercial property focus. Seeking Director-level move. Prefers Midwest, open to remote.',salary:'$120–140k',location:'Chicago, IL',geo:null,tags:['Commercial Lines','12 yrs exp'] },
-    'Sarah Chen':   { name:'Sarah Chen',   title:'Claims Director',       company:'Nationwide',        email:'s.chen@email.com',      phone:'(614) 555-0211',linkedin:'https://linkedin.com/in/sarahchen',  stage:'Submitted',   notes:'Strong claims leadership background. 15 years P&C. Very motivated to move.',salary:'$150–170k',location:'Columbus, OH',geo:{lat:39.961,lon:-82.999,city:'Columbus',state:'OH',precision:'city'},tags:['Claims','15 yrs exp'] },
-    'Marcus Webb':  { name:'Marcus Webb',  title:'Underwriting VP',       company:'Chubb',             email:'m.webb@email.com',      phone:'(212) 555-0399',linkedin:'https://linkedin.com/in/marcuswebb', stage:'Interviewing',notes:'Senior underwriting leader. Commercial specialty focus. Strong references.',salary:'$175–200k',location:'New York, NY',geo:{lat:40.713,lon:-74.006,city:'New York',state:'NY',precision:'city'},tags:['Underwriting','20 yrs exp'] },
-    'David Park':   { name:'David Park',   title:'Sr. Claims Adjuster',   company:'Allstate',          email:'d.park@email.com',      phone:'(773) 555-0102',linkedin:'https://linkedin.com/in/davidpark',  stage:'First Call',  notes:'10 years complex commercial claims. Interested in management track.',salary:'$95–115k',location:'Chicago, IL',geo:{lat:41.878,lon:-87.630,city:'Chicago',state:'IL',precision:'city'},tags:['Claims','10 yrs exp'] },
-    'Lisa Romero':  { name:'Lisa Romero',  title:'Underwriting Manager',  company:'Markel',            email:'l.romero@email.com',    phone:'(804) 555-0177',linkedin:'https://linkedin.com/in/lisaromero', stage:'Sourced',     notes:'Specialty lines background, E&S market. Strong technical underwriter.',salary:'$130–150k',location:'Virginia',geo:{lat:37.523,lon:-78.660,city:'',state:'VA',precision:'state'},tags:['Specialty Lines','E&S'] },
-    'Tom Bradley':  { name:'Tom Bradley',  title:'Risk Engineer',         company:'FM Global',         email:'t.bradley@email.com',   phone:'(401) 555-0244',linkedin:'https://linkedin.com/in/tombradley', stage:'Sourced',     notes:'Property risk engineering, large commercial accounts. PE licensed.',salary:'$110–130k',location:'Providence, RI',geo:{lat:41.824,lon:-71.413,city:'Providence',state:'RI',precision:'city'},tags:['Risk Engineering','PE'] }
-  };
 }
 
 // ── Day toggle ────────────────────────────────
@@ -4446,6 +4507,12 @@ function dayBrief() {
   lines.push(label === 'Today' ? `Today is ${dateSaid}.`
            : label === 'Tomorrow' ? `Tomorrow is ${dateSaid}.`
            : `${dateSaid}.`);
+
+  /* Said second, before any schedule: if a feed is down, "nothing on the
+     calendar" is a lie he has no way of catching by ear. */
+  const note = typeof sourceNoteText === 'function' ? sourceNoteText() : null;
+  if (note) lines.push(note.spoken);
+
   if (!real.length) {
     lines.push(meetings.length
       ? 'Nothing booked with anyone — just your own blocks.'
@@ -4934,12 +5001,40 @@ function stopSpeaking() {
   if (btn) btn.classList.remove('on');
 }
 
+/* What the sample says.
+
+   This used to be a fixed sentence — "Your next meeting is with Mick Rodgers
+   at ALKEME Insurance, in Boston" — built from a real name off his calendar
+   and a firm and a city that were invented to make it sound right. Pressing
+   Try it, or changing voice, therefore announced a meeting that did not exist,
+   in the same voice the real brief uses. Nothing here is allowed to be made
+   up: the sample is the real next meeting, or it is plainly a sample. */
+function sampleSentence() {
+  try {
+    const real = (activeMeetings() || []).filter(m => {
+      const cat = classifyMeeting(m);
+      return cat !== 'personal' && cat !== 'team';
+    });
+    if (real.length) {
+      const m = real[0];
+      const name = m.attendees?.[0] || m.title;
+      const c = findCandidate(name) || findContact(name) || {};
+      const who = [c.title, c.company].filter(Boolean).join(' at ');
+      const where = c.geo ? (c.geo.city || c.geo.state) : (c.location || '');
+      let s = `At ${fmtTime(m.start)}, ${name}`;
+      if (who) s += `, ${who}`;
+      if (where) s += `, in ${where}`;
+      return s + '.';
+    }
+  } catch (e) { /* fall through to the neutral line */ }
+  return 'This is the voice your day will be read in.';
+}
+
 function speakSample(voiceName, rate) {
   if (!speakSupported()) return;
   try {
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(
-      'Your next meeting is with Mick Rodgers at ALKEME Insurance, in Boston.');
+    const u = new SpeechSynthesisUtterance(sampleSentence());
     const v = usableVoices().find(x => x.name === voiceName);
     if (v) u.voice = v;
     u.rate = rate || 1;
@@ -6348,9 +6443,11 @@ async function loadAll() {
      single-day path still answers, and the dashboard is merely back to where
      it was this morning rather than blank. */
   try {
-    const n = await loadWeek();
-    if (!n) useDemoMeetings();
+    await loadWeek();
+    noteSource('calendar', 'ok');
   } catch (e) {
+    // The week request failed; the single-day endpoint is the older path and
+    // records its own status. A quiet week is left quiet.
     console.warn('Week calendar:', e.message);
     await loadCalendar();
   }
