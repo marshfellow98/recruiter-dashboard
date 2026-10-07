@@ -111,6 +111,157 @@
 
   /* Not a subtle toast. If the dashboard cannot see the calendar, that is the
      most important thing on the screen. */
+  /* ── The page switch ─────────────────────────────────────────────────── */
+  .page-tabs {
+    display: inline-flex; gap: 4px; margin-top: 10px; padding: 4px;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 13px;
+  }
+  .page-tab {
+    padding: 8px 17px; border: none; border-radius: 10px; background: none;
+    color: var(--t3); font-family: 'Inter', sans-serif; font-size: 14px;
+    font-weight: 650; letter-spacing: 0.01em; cursor: pointer;
+    transition: all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .page-tab:hover { color: var(--t1); background: rgba(255,255,255,0.06); }
+  .page-tab.on {
+    background: rgba(0,208,132,0.16); color: #4ae3ab;
+    box-shadow: inset 0 0 0 1px rgba(0,208,132,0.35);
+  }
+
+  /* ── The call sheet ──────────────────────────────────────────────────── */
+  .sheet-wrap { padding: 4px 28px 60px; }
+  .sheet-head {
+    display: flex; align-items: flex-start; gap: 20px; flex-wrap: wrap;
+    padding: 22px 0 18px; border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+  .sheet-eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.14em; color: var(--t4);
+    text-transform: uppercase;
+  }
+  .sheet-who { font-size: 34px; font-weight: 700; color: var(--t1); line-height: 1.15; margin-top: 4px; }
+  .sheet-sub { font-size: 15px; color: var(--t3); margin-top: 5px; max-width: 60ch; }
+  .sheet-actions { margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; }
+  .sheet-body { padding-top: 24px; }
+  .sheet-empty {
+    max-width: 62ch; padding: 30px 32px; border-radius: 16px;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+    color: var(--t2); font-size: 17px; line-height: 1.6;
+  }
+  .sheet-empty strong { color: var(--t1); font-weight: 650; }
+  @media (max-width: 760px) {
+    .sheet-wrap { padding: 4px 16px 48px; }
+    .sheet-who { font-size: 27px; }
+    .page-tab { padding: 10px 15px; font-size: 15px; }
+  }
+  /* The sheet. Built for eyes that struggle: one section on screen, one column
+     of fields, type at a size that does not need leaning in, and labels at
+     full contrast rather than the usual muted grey. The first version put all
+     fifty-seven boxes up at once and was a wall. */
+  .sheet-main { display: grid; grid-template-columns: 268px minmax(0, 1fr); gap: 30px; align-items: start; }
+  .sheet-rail {
+    position: sticky; top: 18px; display: flex; flex-direction: column; gap: 4px;
+    padding: 10px; border-radius: 16px;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07);
+  }
+  .sheet-nav {
+    display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px;
+    border: none; border-radius: 11px; background: none; cursor: pointer;
+    color: var(--t3); font-family: 'Inter', sans-serif; font-size: 15px;
+    font-weight: 600; text-align: left; transition: background 0.18s, color 0.18s;
+  }
+  .sheet-nav:hover { background: rgba(255,255,255,0.06); color: var(--t1); }
+  .sheet-nav.on { background: rgba(0,208,132,0.15); color: #4ae3ab; }
+  .sheet-nav-name { flex: 1; }
+  .sheet-nav-count { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--t4); }
+  .sheet-nav.on .sheet-nav-count { color: #4ae3ab; }
+  .sheet-nav.part .sheet-nav-count { color: #e1a13f; }
+  .sheet-nav.done .sheet-nav-count { color: #4ae3ab; }
+
+  .sheet-section-head {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 6px;
+  }
+  .sheet-step {
+    font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--t4);
+  }
+  .sheet-section-title { margin: 4px 0 0; font-size: 27px; font-weight: 700; color: var(--t1); }
+  .sheet-section-count { font-size: 15px; color: var(--t3); font-variant-numeric: tabular-nums; }
+  .sheet-section-note {
+    margin: 10px 0 0; max-width: 70ch; font-size: 16px; line-height: 1.6; color: var(--t2);
+    padding: 12px 16px; border-radius: 12px; background: rgba(225,161,63,0.07);
+    border: 1px solid rgba(225,161,63,0.22);
+  }
+
+  /* One column. Two fields side by side halves the type size he can live with. */
+  .sheet-fields { display: flex; flex-direction: column; gap: 20px; margin-top: 24px; max-width: 760px; }
+  .sheet-label {
+    display: block; margin-bottom: 8px; font-size: 17px; font-weight: 600; color: var(--t1);
+  }
+  .sheet-rf {
+    display: inline-block; margin-left: 9px; padding: 2px 7px; border-radius: 6px;
+    background: rgba(225,161,63,0.15); border: 1px solid rgba(225,161,63,0.4);
+    color: #e1a13f; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+    vertical-align: middle;
+  }
+  .sheet-input-wrap { position: relative; display: block; }
+  .sheet-input {
+    width: 100%; padding: 15px 16px; border-radius: 12px;
+    background: rgba(255,255,255,0.05); border: 1.5px solid rgba(255,255,255,0.14);
+    color: var(--t1); font-family: 'Inter', sans-serif; font-size: 20px;
+    transition: border-color 0.18s, background 0.18s;
+  }
+  .sheet-input::placeholder { color: var(--t4); font-size: 17px; }
+  .sheet-input:focus {
+    outline: none; border-color: rgba(0,208,132,0.7); background: rgba(0,208,132,0.07);
+    box-shadow: 0 0 0 3px rgba(0,208,132,0.12);
+  }
+  .sheet-input.has-prefix { padding-left: 36px; }
+  .sheet-input.has-suffix { padding-right: 40px; }
+  .sheet-area { resize: vertical; line-height: 1.5; min-height: 110px; }
+  .sheet-prefix, .sheet-suffix {
+    position: absolute; top: 15px; color: var(--t3); font-size: 20px; pointer-events: none;
+  }
+  .sheet-prefix { left: 16px; }
+  .sheet-suffix { right: 16px; }
+
+  .sheet-move {
+    display: flex; gap: 12px; margin-top: 30px; padding-top: 22px; max-width: 760px;
+    border-top: 1px solid rgba(255,255,255,0.07);
+  }
+  .sheet-move .sheet-btn { font-size: 16px; padding: 14px 22px; }
+  .sheet-move .sheet-btn:disabled { opacity: 0.35; cursor: default; }
+  #sheet-next { margin-left: auto; }
+
+  .sheet-status { align-self: center; font-size: 15px; color: var(--t3); min-width: 160px; text-align: right; }
+  .sheet-status.good { color: #4ae3ab; }
+  .sheet-status.bad { color: #ff8078; }
+  .sheet-btn {
+    padding: 12px 19px; border-radius: 11px; cursor: pointer;
+    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14);
+    color: var(--t1); font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 600;
+  }
+  .sheet-btn:hover:not(:disabled) { background: rgba(255,255,255,0.12); }
+  .sheet-btn.primary {
+    background: rgba(0,208,132,0.16); border-color: rgba(0,208,132,0.4); color: #4ae3ab;
+  }
+  .sheet-btn.primary:hover:not(:disabled) { background: rgba(0,208,132,0.24); }
+
+  @media (max-width: 1080px) {
+    /* The rail becomes a row of chips above the section rather than vanishing. */
+    .sheet-main { grid-template-columns: 1fr; gap: 18px; }
+    .sheet-rail {
+      position: static; flex-direction: row; overflow-x: auto; gap: 6px;
+      -webkit-overflow-scrolling: touch;
+    }
+    .sheet-nav { width: auto; flex: 0 0 auto; }
+  }
+  @media (max-width: 760px) {
+    .sheet-section-title { font-size: 23px; }
+    .sheet-status { text-align: left; min-width: 0; }
+    .sheet-move { flex-wrap: wrap; }
+  }
   .sched-dupe {
     display: inline-block; margin-left: 7px; padding: 1px 6px; border-radius: 6px;
     background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.14);
@@ -1279,6 +1430,15 @@
   <span class="org-tagline">Insurance Risk Retirement</span>
 </div>
       <div class="topbar-date" id="today-date">Loading…</div>
+      <!-- Two pages, one switch. Big targets and real words rather than icons,
+           because this is the control that has to be findable without reading
+           carefully. -->
+      <div class="page-tabs" role="tablist" aria-label="Dashboard pages">
+        <button type="button" class="page-tab on" id="tab-day" role="tab"
+                aria-selected="true" onclick="switchPage('day')">The Day</button>
+        <button type="button" class="page-tab" id="tab-sheet" role="tab"
+                aria-selected="false" onclick="switchPage('sheet')">Call Sheet</button>
+      </div>
     </div>
     <div class="weather-chip" id="weather-chip">
       <canvas class="wx-scene" id="wx-scene" aria-hidden="true"></canvas>
@@ -1353,6 +1513,12 @@
 <div class="add-person" id="add-person"></div>
 
 <div class="weather-alert-strip" id="weather-alert-strip" style="display:none;"></div>
+
+<!-- ── The two pages ──────────────────────────────────────────────────────
+     Everything that was here is "The Day": what is coming, who it is with and
+     what to know before it starts. The second page is for during the call. One
+     is reference, the other is work, and they want different screens. -->
+<div id="page-day">
 
 <!-- Industry Pulse — P&C insurance news carousel, items expire after 48h -->
 <div class="news-section">
@@ -1459,6 +1625,29 @@
   <canvas id="geomap-canvas"></canvas>
   <div class="geomap-detail" id="geomap-detail"></div>
   <div class="geomap-missing" id="geomap-missing"></div>
+</div>
+
+</div><!-- /page-day -->
+
+<!-- The call sheet: the questions worth asking while he has them on the phone,
+     and somewhere to put the answers. -->
+<div id="page-sheet" hidden>
+  <div class="sheet-wrap">
+    <div class="sheet-head">
+      <div>
+        <div class="sheet-eyebrow">Call sheet</div>
+        <div class="sheet-who" id="sheet-who">Nobody selected</div>
+        <div class="sheet-sub" id="sheet-sub">Pick someone on The Day and their sheet opens here.</div>
+      </div>
+      <div class="sheet-actions" id="sheet-actions"></div>
+    </div>
+    <div class="sheet-main">
+      <!-- Every section, with how much of each is done. Nothing is hidden —
+           it is one tap away, and the list says where he is. -->
+      <nav class="sheet-rail" id="sheet-rail" aria-label="Sheet sections"></nav>
+      <div class="sheet-body" id="sheet-body"></div>
+    </div>
+  </div>
 </div>
 
 <div class="modal-wrap" id="modal">
@@ -2493,6 +2682,482 @@ function switchDay(day) {
 }
 
 // ── Render schedule ───────────────────────────
+/* ── Two pages ─────────────────────────────────────────────────────────────
+   The Day is reference: what is coming, who it is with, what to know before it
+   starts. The Call Sheet is work: what to ask while he has them on the phone,
+   and somewhere to put the answers. Trying to be both on one screen is how a
+   dashboard becomes a wall.
+
+   The switch is a real page change rather than a scroll, because the two want
+   different room, and because "where am I" should be answerable from the top
+   of the screen. */
+const PAGES = { current: 'day' };
+
+function switchPage(page) {
+  if (page !== 'sheet') page = 'day';
+  PAGES.current = page;
+
+  const dayEl = document.getElementById('page-day');
+  const sheetEl = document.getElementById('page-sheet');
+  if (dayEl) dayEl.hidden = page !== 'day';
+  if (sheetEl) sheetEl.hidden = page !== 'sheet';
+
+  ['day', 'sheet'].forEach(p => {
+    const b = document.getElementById('tab-' + p);
+    if (!b) return;
+    b.classList.toggle('on', p === page);
+    b.setAttribute('aria-selected', String(p === page));
+  });
+
+  if (page === 'sheet') { renderSheet(); return; }
+
+  /* A hidden canvas measures zero, so both of them come back from this switch
+     sized for nothing at all. Measure and redraw on the next frame, once the
+     browser has laid the page out again — the same trap that left the arc
+     blank after a text-size change. */
+  requestAnimationFrame(() => {
+    try {
+      mapResize();
+      arcResize();
+      buildDayArc();
+      arcDraw(performance.now());
+    } catch (e) { /* a panel that is not up yet is not worth a broken tab */ }
+  });
+}
+
+/* Whose sheet this is: whoever he has open on The Day. */
+function sheetPerson() {
+  if (state.viewing) {
+    return { name: state.viewing.name, rec: state.viewing, meeting: null };
+  }
+  const m = (activeMeetings() || [])[state.selectedIdx];
+  if (!m || !worthShowing(m)) return null;
+  const name = m.attendees?.[0] || m.title;
+  return { name, rec: findCandidate(name) || findContact(name) || null, meeting: m };
+}
+
+/* ── The Candidate Data Sheet ──────────────────────────────────────────────
+   The sections and fields below are the firm's own CDS, in its order, down to
+   the wording of the labels. Nothing here was invented: what the sheet asks
+   for is what this page asks for, including the fields that are often blank,
+   because a blank on a data sheet is itself information — it is the thing
+   still to get.
+
+   The last section is the exception and says so on screen: a handful of
+   questions that decide whether a producer can actually be presented and that
+   the sheet does not capture. Portability and restrictive covenants are the
+   two that most often end a submission late, and "where else are you in
+   process" is what stops two firms presenting the same person in one week.
+
+   `from` names a field on the RecruiterFlow record to start from. A prefilled
+   answer is marked as coming from the CRM until he touches it, because the
+   CRM being confident is not the same as the candidate having said so. */
+const SHEET_SECTIONS = [
+  { id: 'identification', title: 'Candidate Identification', fields: [
+    { id: 'full_name',        label: 'Full Name',        from: 'name' },
+    { id: 'current_title',    label: 'Current Title',    from: 'title' },
+    { id: 'current_employer', label: 'Current Employer', from: 'company' },
+    { id: 'location',         label: 'Location',         from: 'location' },
+    { id: 'function',         label: 'Function',         placeholder: 'Producer, Account Executive…' },
+    { id: 'industry',         label: 'Industry',         placeholder: 'Commercial, Personal, Benefits…' },
+    { id: 'specialty',        label: 'Specialty',        placeholder: 'Transportation, Construction…' },
+    { id: 'career_level',     label: 'Career Level',     placeholder: 'Producer, Manager, Executive…' },
+    { id: 'licensure',        label: 'Licensure',        placeholder: 'P&C, L&H, Series 6/63…' }
+  ]},
+  { id: 'contact', title: 'Contact Information', fields: [
+    { id: 'email',    label: 'Email',    from: 'email',    type: 'email' },
+    { id: 'phone',    label: 'Phone',    from: 'phone',    type: 'tel' },
+    { id: 'linkedin', label: 'LinkedIn', from: 'linkedin' }
+  ]},
+  { id: 'book', title: 'Book of Business', fields: [
+    { id: 'book_current',   label: 'Current Book of Business (Rev.)', type: 'money' },
+    { id: 'book_last_year', label: "Last Year's Production (Rev.)",   type: 'money' },
+    { id: 'book_target',    label: 'Target Account Size (Rev.)',      type: 'money' },
+    { id: 'book_average',   label: 'Average Account Size (Rev.)',     type: 'money' }
+  ]},
+  { id: 'compensation', title: 'Compensation', fields: [
+    { id: 'comp_base',        label: 'Base Compensation',          type: 'money', from: 'salary' },
+    { id: 'comp_commission',  label: 'Commission Total',           type: 'money' },
+    { id: 'comp_new_rate',    label: 'New Business Commission Rate', type: 'percent' },
+    { id: 'comp_renew_rate',  label: 'Renewal Commission Rate',      type: 'percent' }
+  ]},
+  { id: 'production', title: 'Production Detail', fields: [
+    { id: 'prod_new',      label: 'New Business',       type: 'money' },
+    { id: 'prod_renewal',  label: 'Renewal Amount',     type: 'money' },
+    { id: 'prod_accounts', label: 'Number of Accounts', type: 'number' }
+  ]},
+  { id: 'education', title: 'Education', fields: [
+    { id: 'edu_school', label: 'School' },
+    { id: 'edu_degree', label: 'Degree' },
+    { id: 'edu_major',  label: 'Major' }
+  ]},
+  { id: 'employment', title: 'Employment History', fields: [
+    { id: 'emp_current',        label: 'Current Employer', from: 'company' },
+    { id: 'emp_current_title',  label: 'Current Title',    from: 'title' },
+    { id: 'emp_current_tenure', label: 'Current Employer Tenure', placeholder: '1 yr 7 mos' },
+    { id: 'emp_prev1',          label: 'Previous Employer' },
+    { id: 'emp_prev1_title',    label: 'Previous Title' },
+    { id: 'emp_prev1_tenure',   label: 'Tenure', placeholder: '11 yrs 4 mos (2014–2025)' },
+    { id: 'emp_prev1_reason',   label: 'Reason Left' },
+    { id: 'emp_prev2',          label: 'Previous Employer (2)' },
+    { id: 'emp_prev2_title',    label: 'Previous Title (2)' },
+    { id: 'emp_prev2_tenure',   label: 'Tenure (2)' },
+    { id: 'emp_prev2_reason',   label: 'Reason Left (2)' },
+    { id: 'emp_prev3',          label: 'Previous Employer (3)' },
+    { id: 'emp_prev3_tenure',   label: 'Tenure (3)' },
+    { id: 'emp_prev3_reason',   label: 'Reason Left (3)' },
+    { id: 'emp_prev4',          label: 'Previous Employer (4)' },
+    { id: 'emp_prev4_tenure',   label: 'Tenure (4)' },
+    { id: 'emp_prev4_reason',   label: 'Reason Left (4)' }
+  ]},
+  { id: 'metadata', title: 'Record Metadata', fields: [
+    { id: 'rf_id',       label: 'RF Candidate ID',     from: 'id' },
+    { id: 'source_type', label: 'Source Type',         from: 'source', placeholder: 'Sales Navigator, Referral…' },
+    { id: 'lead_owner',  label: 'Lead Owner / Added By', placeholder: 'Shane Graham' },
+    { id: 'tags',        label: 'Tags',                from: 'tags' }
+  ]},
+  { id: 'beyond', title: 'Worth asking',
+    note: 'Not on the data sheet. These are the answers that decide whether somebody can be put in front of a client — and the last one is how two firms end up presenting the same person in the same week.',
+    fields: [
+    { id: 'why_looking',    label: 'Why now?', type: 'textarea',
+      placeholder: 'What has changed, and what would have to be true for them to move' },
+    { id: 'portability',    label: 'How much of the book would follow?', type: 'textarea',
+      placeholder: 'Rough revenue, which accounts, how confident they are' },
+    { id: 'restrictions',   label: 'Non-compete / non-solicit / garden leave', type: 'textarea',
+      placeholder: 'What they signed, when it expires, whether they have a copy' },
+    { id: 'carriers',       label: 'Carrier appointments & key markets', type: 'textarea' },
+    { id: 'comp_expect',    label: 'What would it take?', type: 'text',
+      placeholder: 'Base, total, anything non-negotiable' },
+    { id: 'geography',      label: 'Where can they work / travel appetite' },
+    { id: 'availability',   label: 'Notice period and start date' },
+    { id: 'other_process',  label: 'Anywhere else in process?', type: 'textarea',
+      placeholder: 'Who has already presented them, and where' },
+    { id: 'references',     label: 'References', type: 'textarea' },
+    { id: 'next_step',      label: 'Agreed next step, and when', type: 'textarea' }
+  ]}
+];
+
+const SHEET = { name: null, values: {}, fromRF: {}, timer: null, status: 'idle',
+                pushing: false, section: 0, focusOnRender: false };
+
+function sheetFieldCount() {
+  return SHEET_SECTIONS.reduce((n, s) => n + s.fields.length, 0);
+}
+function sheetFilledCount() {
+  return Object.values(SHEET.values).filter(v => String(v || '').trim()).length;
+}
+
+/* What RecruiterFlow already knows, as a starting point. Tags arrive as an
+   array and a location as an object on some records; both have to come out as
+   something a person can read in a box. */
+function sheetPrefill(rec) {
+  const out = {};
+  if (!rec) return out;
+  const flat = v => Array.isArray(v) ? v.join(', ')
+               : (v && typeof v === 'object') ? [v.city, v.state].filter(Boolean).join(', ')
+               : (v == null ? '' : String(v));
+  SHEET_SECTIONS.forEach(sec => sec.fields.forEach(f => {
+    if (!f.from) return;
+    const val = flat(rec[f.from]).trim();
+    if (val) out[f.id] = val;
+  }));
+  return out;
+}
+
+async function loadSheetFor(person) {
+  SHEET.name = person.name;
+  SHEET.values = {};
+  SHEET.fromRF = {};
+
+  const pre = sheetPrefill(person.rec);
+  try {
+    const r = await fetch(`/api/sheet?name=${encodeURIComponent(person.name)}`);
+    const j = await r.json();
+    const saved = (j.sheet && j.sheet.values) || {};
+    /* What he typed wins over what the CRM guessed, always. */
+    SHEET.values = { ...pre, ...saved };
+    Object.keys(pre).forEach(k => { if (!saved[k]) SHEET.fromRF[k] = true; });
+  } catch (e) {
+    SHEET.values = { ...pre };
+    Object.keys(pre).forEach(k => { SHEET.fromRF[k] = true; });
+    console.warn('[sheet] could not load saved answers:', e.message);
+  }
+}
+
+function sheetStatus(text, cls) {
+  const el = document.getElementById('sheet-status');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'sheet-status' + (cls ? ' ' + cls : '');
+}
+
+/* Saved as he types, because this gets filled in during a call and a button at
+   the end is a button that gets missed. Debounced so a sentence is one write
+   rather than forty. */
+function queueSheetSave() {
+  clearTimeout(SHEET.timer);
+  sheetStatus('Saving…');
+  SHEET.timer = setTimeout(saveSheetNow, 700);
+}
+
+async function saveSheetNow(opts = {}) {
+  if (!SHEET.name) return null;
+  const person = sheetPerson();
+  const body = {
+    name: SHEET.name,
+    values: SHEET.values,
+    id: (person && person.rec && person.rec.id) || null,
+    kind: (person && person.rec && person.rec.stage !== undefined) ? 'candidate' : 'candidate'
+  };
+  if (opts.push) { body.push = true; body.text = sheetAsText(); }
+  try {
+    const r = await fetch('/api/sheet', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    sheetStatus(`Saved · ${sheetFilledCount()} of ${sheetFieldCount()} filled`, 'good');
+    return j;
+  } catch (e) {
+    sheetStatus('Not saved — ' + e.message, 'bad');
+    return null;
+  }
+}
+
+/* The sheet as plain text: what gets copied out, and what gets sent to
+   RecruiterFlow. Empty fields are kept, because the gaps are the point. */
+function sheetAsText() {
+  const lines = [`Candidate Data Sheet — ${SHEET.name}`,
+                 `Filled in on the dashboard, ${new Date().toLocaleDateString('en-US',
+                   { year: 'numeric', month: 'long', day: 'numeric' })}`, ''];
+  SHEET_SECTIONS.forEach(sec => {
+    lines.push(sec.title.toUpperCase());
+    sec.fields.forEach(f => {
+      const v = String(SHEET.values[f.id] || '').trim();
+      lines.push(`  ${f.label}: ${v || '—'}`);
+    });
+    lines.push('');
+  });
+  return lines.join('\n').trim();
+}
+
+function sheetFieldHtml(f) {
+  const v = SHEET.values[f.id] || '';
+  const rf = SHEET.fromRF[f.id] && v
+    ? '<span class="sheet-rf" title="Came from RecruiterFlow — confirm it">RF</span>' : '';
+  const ph = f.placeholder ? ` placeholder="${esc(f.placeholder)}"` : '';
+  const pre = f.type === 'money' ? '<span class="sheet-prefix">$</span>' : '';
+  const suf = f.type === 'percent' ? '<span class="sheet-suffix">%</span>' : '';
+  const input = f.type === 'textarea'
+    ? `<textarea id="sf-${f.id}" class="sheet-input sheet-area" rows="3"${ph}>${esc(v)}</textarea>`
+    : `<input id="sf-${f.id}" class="sheet-input${f.type === 'money' ? ' has-prefix' : ''}` +
+      `${f.type === 'percent' ? ' has-suffix' : ''}" type="${f.type === 'email' ? 'email' :
+        f.type === 'tel' ? 'tel' : 'text'}" value="${esc(v)}"${ph}>`;
+  return `<div class="sheet-field${f.type === 'textarea' ? ' wide' : ''}">
+    <label class="sheet-label" for="sf-${f.id}">${esc(f.label)}${rf}</label>
+    <div class="sheet-input-wrap">${pre}${input}${suf}</div>
+  </div>`;
+}
+
+/* ── One section at a time ─────────────────────────────────────────────────
+   The first build put all fifty-seven boxes on one page. It was accurate and
+   it was unusable: for someone who reads a screen with difficulty, a wall of
+   small boxes is not a form, it is a search. Making the type bigger would only
+   have made the wall taller.
+
+   So the sheet is one section at a time — nine fields at most, in one column,
+   at a size he can actually read — with every section listed down the side
+   showing how much of it is done. Nothing is hidden: it is one tap away and
+   the list says where he is. */
+function sheetSectionProgress(sec) {
+  const filled = sec.fields.filter(f => String(SHEET.values[f.id] || '').trim()).length;
+  return { filled, total: sec.fields.length };
+}
+
+function renderSheetRail() {
+  const rail = document.getElementById('sheet-rail');
+  if (!rail) return;
+  rail.innerHTML = SHEET_SECTIONS.map((sec, i) => {
+    const pr = sheetSectionProgress(sec);
+    const done = pr.filled === pr.total ? ' done' : pr.filled ? ' part' : '';
+    return `<button type="button" class="sheet-nav${i === SHEET.section ? ' on' : ''}${done}"
+      data-i="${i}" aria-current="${i === SHEET.section}">
+      <span class="sheet-nav-name">${esc(sec.title)}</span>
+      <span class="sheet-nav-count">${pr.filled}/${pr.total}</span>
+    </button>`;
+  }).join('');
+  rail.querySelectorAll('.sheet-nav').forEach(b =>
+    b.addEventListener('click', () => { SHEET.section = Number(b.dataset.i); renderSheetBody(); }));
+}
+
+function renderSheetBody() {
+  const body = document.getElementById('sheet-body');
+  if (!body) return;
+  const i = Math.max(0, Math.min(SHEET_SECTIONS.length - 1, SHEET.section || 0));
+  SHEET.section = i;
+  const sec = SHEET_SECTIONS[i];
+  const pr = sheetSectionProgress(sec);
+
+  body.innerHTML = `
+    <section class="sheet-section" data-section="${esc(sec.id)}">
+      <div class="sheet-section-head">
+        <div>
+          <div class="sheet-step">Section ${i + 1} of ${SHEET_SECTIONS.length}</div>
+          <h2 class="sheet-section-title">${esc(sec.title)}</h2>
+        </div>
+        <div class="sheet-section-count">${pr.filled} of ${pr.total} filled</div>
+      </div>
+      ${sec.note ? `<p class="sheet-section-note">${esc(sec.note)}</p>` : ''}
+      <div class="sheet-fields">${sec.fields.map(sheetFieldHtml).join('')}</div>
+      <div class="sheet-move">
+        <button type="button" class="sheet-btn" id="sheet-back"${i === 0 ? ' disabled' : ''}>← Back</button>
+        <button type="button" class="sheet-btn primary" id="sheet-next"${i === SHEET_SECTIONS.length - 1 ? ' disabled' : ''}>Next: ${esc((SHEET_SECTIONS[i + 1] || {}).title || 'Done')} →</button>
+      </div>
+    </section>`;
+
+  body.querySelectorAll('.sheet-input').forEach(el => {
+    const id = el.id.replace(/^sf-/, '');
+    el.addEventListener('input', () => {
+      SHEET.values[id] = el.value;
+      delete SHEET.fromRF[id];                       // his answer now, not the CRM's
+      const lab = body.querySelector(`label[for="sf-${id}"] .sheet-rf`);
+      if (lab) lab.remove();
+      const cnt = body.querySelector('.sheet-section-count');
+      if (cnt) { const p2 = sheetSectionProgress(sec); cnt.textContent = `${p2.filled} of ${p2.total} filled`; }
+      queueSheetSave();
+    });
+    /* Enter moves on rather than doing nothing, so a whole section can be
+       filled without reaching for the mouse. Shift+Enter still breaks a line
+       inside the long answers. */
+    el.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' || e.shiftKey) return;
+      if (el.classList.contains('sheet-area') && !e.metaKey && !e.ctrlKey) return;
+      e.preventDefault();
+      const all = [...body.querySelectorAll('.sheet-input')];
+      const next = all[all.indexOf(el) + 1];
+      if (next) next.focus(); else sheetGo(1);
+    });
+  });
+
+  const back = document.getElementById('sheet-back');
+  if (back) back.addEventListener('click', () => sheetGo(-1));
+  const next = document.getElementById('sheet-next');
+  if (next) next.addEventListener('click', () => sheetGo(1));
+
+  renderSheetRail();
+  const first = body.querySelector('.sheet-input');
+  if (first && SHEET.focusOnRender) { first.focus(); SHEET.focusOnRender = false; }
+}
+
+function sheetGo(step) {
+  const n = SHEET_SECTIONS.length;
+  const to = Math.max(0, Math.min(n - 1, (SHEET.section || 0) + step));
+  if (to === SHEET.section) return;
+  SHEET.section = to;
+  SHEET.focusOnRender = true;
+  renderSheetBody();
+  const wrap = document.querySelector('.sheet-wrap');
+  if (wrap) wrap.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
+function renderSheet() {
+  const who = document.getElementById('sheet-who');
+  const sub = document.getElementById('sheet-sub');
+  const body = document.getElementById('sheet-body');
+  const actions = document.getElementById('sheet-actions');
+  if (!who || !body) return;
+
+  const p = sheetPerson();
+  if (!p) {
+    who.textContent = 'Nobody selected';
+    sub.textContent = 'Open someone on The Day and their sheet opens here.';
+    if (actions) actions.innerHTML = '';
+    body.innerHTML = `<div class="sheet-empty">
+      <strong>No one is open.</strong><br>
+      Pick a meeting on The Day — or search for anybody in RecruiterFlow — and
+      their data sheet is waiting here, with what the CRM already knows filled in.
+    </div>`;
+    return;
+  }
+
+  who.textContent = p.name;
+  const bits = [p.rec && p.rec.title, p.rec && p.rec.company].filter(Boolean).join(' at ');
+  sub.textContent = bits || (p.rec ? 'On file in RecruiterFlow.' : 'Not in RecruiterFlow yet — the sheet still saves.');
+
+  if (actions) {
+    actions.innerHTML = `
+      <div class="sheet-status" id="sheet-status">&nbsp;</div>
+      <button type="button" class="sheet-btn" id="sheet-copy">Copy sheet</button>
+      <button type="button" class="sheet-btn primary" id="sheet-push">Send to RecruiterFlow</button>`;
+  }
+
+  /* Already on screen for this person: leave it alone. Anything else calling
+     renderCard — the countdown, a refresh, a new email arriving — would
+     otherwise rebuild the form under his hands mid-sentence, taking the caret
+     and the "Saved" with it. */
+  if (SHEET.name === p.name && body.querySelector('.sheet-input')) {
+    wireSheetActions();
+    return;
+  }
+  if (SHEET.name === p.name && Object.keys(SHEET.values).length) {
+    renderSheetBody();
+    wireSheetActions();
+    sheetStatus(`${sheetFilledCount()} of ${sheetFieldCount()} filled`);
+    return;
+  }
+
+  body.innerHTML = '<div class="sheet-empty">Opening the sheet…</div>';
+  loadSheetFor(p).then(() => {
+    if (SHEET.name !== p.name) return;          // he moved on while it loaded
+    renderSheetBody();
+    wireSheetActions();
+    sheetStatus(`${sheetFilledCount()} of ${sheetFieldCount()} filled`);
+  });
+}
+
+function wireSheetActions() {
+  const copy = document.getElementById('sheet-copy');
+  if (copy) copy.onclick = async () => {
+    const text = sheetAsText();
+    try {
+      await navigator.clipboard.writeText(text);
+      copy.textContent = 'Copied';
+      setTimeout(() => { copy.textContent = 'Copy sheet'; }, 1600);
+    } catch (e) {
+      /* Clipboard access can be refused outright; falling back to a selection
+         beats telling him it worked when it did not. */
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); copy.textContent = 'Copied'; }
+      catch (e2) { copy.textContent = 'Copy failed'; }
+      ta.remove();
+      setTimeout(() => { copy.textContent = 'Copy sheet'; }, 1600);
+    }
+  };
+
+  const push = document.getElementById('sheet-push');
+  if (push) push.onclick = async () => {
+    if (SHEET.pushing) return;
+    const person = sheetPerson();
+    const id = person && person.rec && person.rec.id;
+    if (!id) {
+      sheetStatus('No RecruiterFlow record to attach this to — file them first', 'bad');
+      return;
+    }
+    SHEET.pushing = true;
+    push.textContent = 'Sending…';
+    clearTimeout(SHEET.timer);
+    const r = await saveSheetNow({ push: true });
+    SHEET.pushing = false;
+    push.textContent = 'Send to RecruiterFlow';
+    const rf = r && r.recruiterflow;
+    if (rf && rf.ok) sheetStatus('Sent to RecruiterFlow', 'good');
+    else sheetStatus('Saved here, but RecruiterFlow refused it' +
+                     (rf && (rf.error || rf.status) ? ` (${rf.error || rf.status})` : ''), 'bad');
+  };
+}
+
 function renderSchedule() {
   const now = new Date();
   const meetings = activeMeetings();
@@ -2588,6 +3253,11 @@ function callListHtml(name) {
 }
 
 function renderCard() {
+  // The sheet follows whoever is open, so picking somebody on The Day changes
+  // whose sheet is waiting on the other page.
+  if (typeof PAGES !== 'undefined' && PAGES.current === 'sheet') {
+    setTimeout(() => { try { renderSheet(); } catch (e) {} }, 0);
+  }
   // A candidate opened from search takes over the card until dismissed.
   if (state.viewing) { renderViewingCard(); return; }
   const meetings = activeMeetings();
@@ -4126,6 +4796,7 @@ function arcVignette(ctx, w, h) {
 function arcFrame(ts) {
   ARC.raf = requestAnimationFrame(arcFrame);
   if (document.hidden || !ARC.ready) return;
+  if (typeof PAGES !== 'undefined' && PAGES.current !== 'day') return;
 
   const easing = Math.abs(ARC.yawTarget - ARC.yaw) > 0.0008 || ARC.drag;
   const pulsing = !arcReduced() && ARC.nodes.some(n => n.isNow || n.i === state.selectedIdx);
@@ -5871,6 +6542,7 @@ function geoMapDraw(ts) {
 // is static most of the time, and the dashboard sits open all day.
 function geoMapFrame(ts) {
   MAP.raf = requestAnimationFrame(geoMapFrame);
+  if (typeof PAGES !== 'undefined' && PAGES.current !== 'day') return;
   if (document.hidden || !MAP.ready) return;
   // 25fps is plenty for a static panel, but a camera glide wants every frame.
   if (ts - MAP.lastDraw < (MAP.viewTo ? 16 : 40)) return;
