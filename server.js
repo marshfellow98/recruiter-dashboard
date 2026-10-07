@@ -248,6 +248,28 @@ function saveOverrides(overrides) {
 // back to the UI rather than swallowed, so a failure to reach the CRM is
 // visible instead of being mistaken for a successful save.
 const NOTES_FILE = path.join(DATA_DIR, 'notes.json');
+/* ── The Candidate Data Sheet ──────────────────────────────────────────────
+   What the business collects before presenting somebody. It is filled in
+   during the call, so it is saved field by field as he types rather than on a
+   button he might never reach — and it is saved here, on the server, so it is
+   not stranded in whichever browser he happened to use.
+
+   Stored exactly like the notes beside it, with the same temp-file-and-rename
+   write, because a half-written sheet is worse than no sheet. */
+const SHEETS_FILE = path.join(DATA_DIR, 'sheets.json');
+
+function loadSheets() {
+  try { return JSON.parse(fs.readFileSync(SHEETS_FILE, 'utf8')); }
+  catch (e) { return {}; }
+}
+
+function saveSheets(sheets) {
+  try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
+  const tmp = SHEETS_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(sheets, null, 2));
+  fs.renameSync(tmp, SHEETS_FILE);
+}
+
 
 function loadNotes() {
   try {
@@ -2914,6 +2936,59 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true, id: made.id, kind, note: noteMoved }));
     } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  /* ── The data sheet for one person ──────────────────────────────────────
+     GET returns what has been filled in so far; POST merges in whatever
+     changed. Merging rather than replacing matters: two tabs open on the same
+     candidate should not let the staler one blank the other's answers. */
+  if (pathname === '/api/sheet' && req.method === 'GET') {
+    const name = String(query.name || '').trim();
+    const sheets = loadSheets();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, sheet: (name && sheets[name]) || null }));
+    return;
+  }
+
+  if (pathname === '/api/sheet' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const name = String(body.name || '').trim();
+      if (!name) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'name is required' }));
+        return;
+      }
+      const sheets = loadSheets();
+      const prev = sheets[name] || { values: {}, created: new Date().toISOString() };
+      const incoming = (body.values && typeof body.values === 'object') ? body.values : {};
+      const values = { ...prev.values };
+      for (const [k, v] of Object.entries(incoming)) {
+        const text = String(v == null ? '' : v);
+        if (text.trim()) values[k] = text; else delete values[k];
+      }
+      sheets[name] = { ...prev, values, id: body.id || prev.id || null,
+                       kind: body.kind || prev.kind || 'candidate',
+                       updated: new Date().toISOString() };
+      saveSheets(sheets);
+
+      /* Sent to RecruiterFlow only when he says so. A sheet is half-finished
+         for most of its life and the CRM should not collect five drafts of it. */
+      let rf = { attempted: false, reason: 'not requested' };
+      if (body.push) {
+        const text = String(body.text || '').trim();
+        rf = text ? await pushNoteToRecruiterFlow(sheets[name].id, text, sheets[name].kind)
+                  : { attempted: false, reason: 'nothing to send' };
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, sheet: sheets[name], recruiterflow: rf,
+                               durable: DURABLE }));
+    } catch (e) {
+      console.error('Sheet save error:', e.message);
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: e.message }));
     }
