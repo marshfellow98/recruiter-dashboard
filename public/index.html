@@ -187,6 +187,15 @@
   .sheet-pick.close { margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.09);
                       border-radius: 0 0 11px 11px; color: var(--t2); }
   .sheet-pick-empty { padding: 14px 15px; color: var(--t3); font-size: 15px; }
+  .search-kind {
+    display: inline-block; margin-left: 9px; padding: 2px 7px; border-radius: 6px;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.13);
+    color: var(--t3); font-size: 10px; font-weight: 700; letter-spacing: 0.07em;
+    text-transform: uppercase; vertical-align: middle;
+  }
+  .search-kind.contact {
+    background: rgba(167,139,250,0.14); border-color: rgba(167,139,250,0.4); color: #c4b5fd;
+  }
   .sheet-main { display: grid; grid-template-columns: 268px minmax(0, 1fr); gap: 30px; align-items: start; }
   .sheet-rail {
     position: sticky; top: 18px; display: flex; flex-direction: column; gap: 4px;
@@ -1489,8 +1498,8 @@
     <div class="search-wrap">
       <span class="search-icon">⌕</span>
       <input id="cand-search" class="search-input" type="text" autocomplete="off"
-             spellcheck="false" aria-label="Search all candidates"
-             placeholder="Search all candidates">
+             spellcheck="false" aria-label="Search candidates and contacts"
+             placeholder="Search people">
       <span class="search-kbd">⌘K</span>
       <div class="search-panel" id="search-panel"></div>
     </div>
@@ -2509,6 +2518,43 @@ function mapCandidateRecord(c) {
           tags: c.tags || []
         };
         return rec.name ? rec : null;
+}
+
+/* A search result, from either book. A contact's record is shaped differently
+   from a candidate's — the firm is in client_company_name, the title in
+   current_designation — and it belongs in state.contacts, because that is
+   where findContact() looks and where the rest of the page expects it. */
+function mapSearchRecord(c) {
+  if (!c) return null;
+  if (c._kind !== 'contact') {
+    const rec = mapCandidateRecord(c);
+    if (rec) rec.kind = 'candidate';
+    return rec;
+  }
+  const last = (c.last_name || '').split(',')[0].trim();
+  const name = `${c.first_name || ''} ${last}`.trim();
+  if (!name) return null;
+  const emailArr = Array.isArray(c.email) ? c.email : (c.email ? [c.email] : []);
+  const phoneArr = Array.isArray(c.phone_number) ? c.phone_number : (c.phone_number ? [c.phone_number] : []);
+  const L = (c.location && typeof c.location === 'object') ? c.location : {};
+  return {
+    name,
+    kind: 'contact',
+    id: c.id || null,
+    title: c.current_designation || c.designation || c.title || '',
+    company: c.client_company_name || c.organization || c.current_organization || c.company || '',
+    email: emailArr[0] || c.email_id || '',
+    phone: phoneArr[0] || '',
+    linkedin: c.linkedin_profile ? `https://linkedin.com/in/${c.linkedin_profile}` : (c.linkedin_url || ''),
+    stage: '',
+    notes: 'No notes on file.',
+    location: L.location || [L.city, L.state].filter(Boolean).join(', ') || '',
+    city: L.city || '',
+    stateName: L.state || '',
+    geo: c._geo || null,
+    source: c.source_name || '',
+    tags: c.tags || []
+  };
 }
 
 async function loadCandidates(names) {
@@ -6016,7 +6062,11 @@ try {
 function focusPerson() {
   if (state.viewing) {
     return { name: state.viewing.name, geo: state.viewing.geo || null,
-             company: state.viewing.company || '', cat: 'candidate', idx: -1 };
+             company: state.viewing.company || '',
+             // The location text he can see on the card, so the map can quote
+             // it back when it cannot turn it into a place.
+             said: state.viewing.location || '',
+             cat: 'candidate', idx: -1 };
   }
   const m = activeMeetings()[state.selectedIdx];
   if (!m) return null;
@@ -6027,10 +6077,41 @@ function focusPerson() {
            cat: classifyMeeting(m), idx: state.selectedIdx };
 }
 
+/* Where a firm is, for somebody with no address of their own. Asked once per
+   company and remembered, because he clicks through people quickly. */
+const CO_PLACE = new Map();
+async function placeOfCompany(company) {
+  const co = String(company || '').trim();
+  if (!co) return null;
+  if (CO_PLACE.has(co)) return CO_PLACE.get(co);
+  try {
+    const d = await apiFetch(`/api/placeof?company=${encodeURIComponent(co)}`);
+    const got = d && d.ok && d.place ? { ...d.place, firm: d.firm || co } : null;
+    CO_PLACE.set(co, got);
+    return got;
+  } catch (e) {
+    CO_PLACE.set(co, null);
+    return null;
+  }
+}
+
 async function refreshNearby() {
   const f = focusPerson();
   NEARBY.focus = f;
-  const g = f && f.geo;
+  let g = f && f.geo;
+
+  /* No address of their own. A contact at HUB with a blank location is not
+     nowhere — he is at HUB's office, and that answer is worth giving as long
+     as the map says that is what it did. Looking somebody up and watching the
+     map carry on showing today was the complaint this answers. */
+  if ((!g || typeof g.lat !== 'number') && f && f.company) {
+    const via = await placeOfCompany(f.company);
+    if (via && typeof via.lat === 'number') {
+      f.geo = via;
+      f.placedVia = via.firm || f.company;
+      g = via;
+    }
+  }
 
   if (!g || typeof g.lat !== 'number') {
     NEARBY.places = []; NEARBY.totals = null; NEARBY.key = null;
@@ -6109,7 +6190,16 @@ function buildFocusMap(f) {
        this address. Hanging it off the person's own pin says that, and keeps
        two markers from sitting on top of each other. */
     if (Math.abs(pl.lat - g.lat) < 0.02 && Math.abs(pl.lon - g.lon) < 0.02) {
+      /* Everyone nearby is at his own address — the usual case for a contact
+         in a big city. Folding them into his pin stops two markers stacking,
+         but a lone dot then looked like nothing was found while the heading
+         claimed five contacts. So the pin carries the count and says what is
+         there, and the panel opens itself the first time. */
       person.place = pl;
+      person.count = Math.max(pl.peopleCount, pl.companyCount);
+      person.sub = [pl.city, pl.state].filter(Boolean).join(', ') +
+        (pl.companyCount ? ` · ${pl.companyCount} firm${pl.companyCount === 1 ? '' : 's'} here` : '');
+      MAP.autoOpen = pl;
       return;
     }
     MAP.pins.push({
@@ -6130,6 +6220,15 @@ function buildFocusMap(f) {
   });
 
   finishBuild();
+
+  /* Opened once per person, not on every rebuild: if he closes it, it stays
+     closed. */
+  if (MAP.autoOpen && MAP.autoOpenedFor !== f.name) {
+    MAP.autoOpenedFor = f.name;
+    const pl = MAP.autoOpen;
+    MAP.autoOpen = null;
+    if (pl.peopleCount || pl.companyCount) setTimeout(() => openMapDetail(pl), 60);
+  }
 }
 
 function stateName(code) { return code ? `${code} (statewide)` : 'Unknown'; }
@@ -6231,6 +6330,17 @@ function renderMapMeta() {
 
   if (focused) {
     if (title) title.textContent = `Around ${f.name.split(' ')[0]}`;
+    /* If he is on the map through his employer rather than his own address,
+       that is said outright — the pin is the firm's office, not his street. */
+    if (f.placedVia) {
+      meta.textContent = `At ${f.placedVia}'s ` +
+        `${f.geo.city || f.geo.state || ''} office · no address of their own`.replace('  ', ' ');
+      miss.innerHTML = '';
+      if (!NEARBY.loading && NEARBY.totals && NEARBY.totals.people) {
+        meta.textContent += ` · ${NEARBY.totals.people} nearby`;
+      }
+      return;
+    }
     const t = NEARBY.totals;
     // The phone has room for the count or the sentence, not both.
     const tight = window.innerWidth < 760;
@@ -6258,13 +6368,22 @@ function renderMapMeta() {
   const total = placed + MAP.missing.length;
   const approx = MAP.pins.filter(p => p.precision === 'state').length;
 
-  if (f && !f.geo && total) {
-    /* He opened someone the map cannot place. Worth saying — but as a note
-       beside the count, not instead of it. Replacing the whole line read as
-       "this map has nothing on it" while four pins sat right there. */
-    meta.textContent = `${placed} of ${total} placed · no location for ${f.name}`;
-  } else if (f && !f.geo) {
-    meta.textContent = `No location on file for ${f.name}`;
+  if (f && !f.geo) {
+    /* He looked somebody up and the map cannot place them — not their own
+       address, and no office for their firm either. Say it in full, with the
+       location text the record does carry, because the alternative is a map
+       showing today's meetings and looking like the click did nothing.
+
+       The count stays at the front: dropping it read as "this map has nothing
+       on it" while four pins sat right there. */
+    const said = f.said
+               || (state.candidates[f.name] || state.contacts[f.name] || {}).location || '';
+    const why = said ? `has "${said}" on file, which we cannot place`
+                     : 'has no location on file';
+    const head = total ? `${placed} of ${total} placed · ` : '';
+    meta.textContent = `${head}no location for ${f.name} — ${why}` +
+      (f.company ? `, and no office on file for ${f.company}` : '') +
+      (total ? ' · showing today instead' : '');
   } else if (!total) {
     meta.textContent = 'No candidate meetings today';
   } else {
@@ -6492,7 +6611,7 @@ function geoMapDraw(ts) {
     const s = mapProject(p.lat, p.lon);
     const place = p.kind === 'place';
     const sel = p.focus === true || (MAP.mode === 'day' && p.idx === state.selectedIdx);
-    const open = place && NEARBY.open && NEARBY.open.id === p.place.id;
+    const open = p.place && NEARBY.open && NEARBY.open.id === p.place.id;
     const hov = i === MAP.hover;
     // A pin that was already on the map stays put; only an arrival falls in.
     const ease = p.fresh === false ? 1 : easeNew;
@@ -6540,7 +6659,7 @@ function geoMapDraw(ts) {
     /* How many people are behind this pin, printed on it. Without the number
        a consolidated pin looks exactly like a single contact, which is the
        one thing the consolidation must not do. */
-    if (place && p.count > 1) {
+    if ((place || (p.focus && p.place)) && p.count > 1) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.font = `700 ${Math.round(r * 0.95)}px Inter, system-ui, sans-serif`;
@@ -6791,10 +6910,16 @@ function renderSearchPanel(message) {
       `<div class="search-count">${SEARCH.results.length} match${SEARCH.results.length === 1 ? '' : 'es'}</div>` +
       SEARCH.results.map((r, i) => {
         const sub = [r.title, r.company].filter(Boolean).join(' · ');
+        // Which book he is looking at, and whether the map will be able to
+        // place them — both answerable before he clicks.
+        const kind = r.kind === 'contact'
+          ? '<span class="search-kind contact">Contact</span>'
+          : '<span class="search-kind">Candidate</span>';
         return `<button type="button" class="search-row${i === SEARCH.active ? ' active' : ''}" data-i="${i}">
-          <span class="search-row-name">${esc(r.name)}</span>
+          <span class="search-row-name">${esc(r.name)}${kind}</span>
           ${sub ? `<span class="search-row-sub">${esc(sub)}</span>` : ''}
-          ${r.location ? `<span class="search-row-where">${esc(r.location)}</span>` : ''}
+          ${r.location ? `<span class="search-row-where">${esc(r.location)}${r.geo ? '' : ' · not on the map'}</span>`
+                       : '<span class="search-row-where">no location on file</span>'}
         </button>`;
       }).join('');
     panel.querySelectorAll('.search-row').forEach(b => {
@@ -6815,10 +6940,15 @@ async function runSearch(q) {
   try {
     const data = await apiFetch(`/api/candidates/search?q=${encodeURIComponent(query)}&limit=20`);
     if (seq !== SEARCH.seq) return;
-    const recs = (data.results || []).map(mapCandidateRecord).filter(Boolean);
-    // Fold them into the candidate map so renderCard, loadEmails and loadCalls
-    // can all find them by name exactly as they do for scheduled attendees.
-    recs.forEach(r => { state.candidates[r.name] = r; });
+    const recs = (data.results || []).map(mapSearchRecord).filter(Boolean);
+    // Fold them into whichever book they came from, so renderCard, loadEmails
+    // and loadCalls all find them by name exactly as they do for scheduled
+    // attendees — and so a contact stays a contact rather than being filed as
+    // a candidate, which decides where a note goes later.
+    recs.forEach(r => {
+      if (r.kind === 'contact') state.contacts[r.name] = r;
+      else state.candidates[r.name] = r;
+    });
     SEARCH.results = recs;
     SEARCH.active = recs.length ? 0 : -1;
     renderSearchPanel();
@@ -6909,6 +7039,7 @@ function viewCandidate(rec) {
 
 function clearViewing() {
   state.viewing = null;
+  MAP.autoOpenedFor = null;        // a fresh visit shows the list again
   withSteadyMap(() => {
     renderSchedule();
     renderCard();
