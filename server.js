@@ -1383,6 +1383,45 @@ function lookupCandidates(names) {
 
 // Free-text search across the server-side pool, so he can find someone without
 // switching to RecruiterFlow. Ranked: name matches beat company and title.
+/* ── The same search, over the people he actually meets ────────────────────
+   The search bar was candidate-only, and most of the names on his calendar
+   are contacts: hiring managers, referral sources, the people at the firms.
+   Looking up "Mick Rodgers" — on today's schedule, in the contact book —
+   answered "No matches", which is indistinguishable from "we do not have
+   him". Contacts are searched alongside candidates now, each result saying
+   which book it came from. */
+function searchContacts(q, limit = 25) {
+  const list = contactsCache.data || [];
+  const needle = String(q || '').trim().toLowerCase();
+  if (needle.length < 2) return [];
+
+  const scored = [];
+  for (const c of list) {
+    const first = String(c.first_name || '');
+    const last = rfCleanLastName(c.last_name || '');
+    const name = `${first} ${last}`.trim().toLowerCase();
+    const org = String(c.client_company_name || c.organization ||
+                       c.current_organization || c.company || '').toLowerCase();
+    const title = String(c.current_designation || c.designation || c.title || '').toLowerCase();
+    const city = String((c.location && c.location.city) || '').toLowerCase();
+
+    let score = 0;
+    if (name === needle) score = 100;
+    else if (name.startsWith(needle)) score = 80;
+    else if (name.includes(needle)) score = 60;
+    else if (org.includes(needle)) score = 40;
+    else if (title.includes(needle)) score = 25;
+    else if (city.includes(needle)) score = 15;
+    if (!score) continue;
+    /* A contact he has a meeting with beats a candidate matched on their
+       employer's name, so contacts carry a small edge over an org-only hit. */
+    scored.push({ score: score + 4, c });
+    if (scored.length > 4000) break;
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map(s => ({ ...s.c, _kind: 'contact' }));
+}
+
 function searchCandidates(q, limit = 25) {
   const list = candidatesCache.data || [];
   const needle = String(q || '').trim().toLowerCase();
@@ -2124,16 +2163,37 @@ async function handleAPI(pathname, query) {
   }
 
   if (pathname === '/api/candidates/search') {
-    await getCandidates();
-    const hits = searchCandidates(query.q, Math.min(Number(query.limit) || 25, 50));
+    const limit = Math.min(Number(query.limit) || 25, 50);
+    /* Both books. Contacts are most of who he meets, and leaving them out of
+       the search made the dashboard look like it had never heard of them. */
+    const [cands, contacts] = await Promise.all([
+      getCandidates().then(() => searchCandidates(query.q, limit)).catch(() => []),
+      getContacts().then(() => searchContacts(query.q, limit)).catch(() => [])
+    ]);
+
     /* Coordinates ride along exactly as they do on the attendee lookup. Without
-       them a searched candidate reached the card with no location, so the map
-       had nothing to centre on and the whole nearby panel sat out the one case
-       it is most useful for. */
-    return {
-      query: query.q || '', count: hits.length,
-      results: hits.map(c => ({ ...c, _geo: geoForCandidate(c) }))
-    };
+       them a searched person reached the card with no location, so the map had
+       nothing to centre on and the whole nearby panel sat out the one case it
+       is most useful for. */
+    const results = [
+      ...contacts.map(c => ({ ...c, _kind: 'contact',
+                              _geo: c._geo || geoForLocation(c.location) })),
+      ...cands.map(c => ({ ...c, _kind: 'candidate', _geo: geoForCandidate(c) }))
+    ];
+
+    /* Somebody filed in both books should appear once, as the contact — that
+       is the record his meetings and his notes hang off. */
+    const seen = new Set();
+    const merged = results.filter(r => {
+      const key = `${String(r.first_name || '').toLowerCase()}|` +
+                  `${rfCleanLastName(r.last_name || '').toLowerCase()}`;
+      if (key === '|' ) return true;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, limit);
+
+    return { query: query.q || '', count: merged.length, results: merged };
   }
 
   if (pathname === '/api/candidates') {
@@ -2159,6 +2219,41 @@ async function handleAPI(pathname, query) {
      the map is already holding for whoever is on the card, and answers with
      the consolidated places around them — one entry per location, each
      carrying the firms and the people at it. */
+  /* ── Where a firm actually is ───────────────────────────────────────────
+     For somebody with no address of their own. A contact at HUB with a blank
+     location is not nowhere — he is at HUB's office, and that is the answer
+     worth giving, as long as the dashboard says that is what it did rather
+     than pretending to know his street. */
+  if (pathname === '/api/placeof') {
+    const want = coKey(query.company || '');
+    if (!want) return { ok: false, reason: 'no company given', place: null };
+    const { list } = await buildPlaces();
+
+    let best = null;
+    for (const pl of list) {
+      // Both lists: `companies` are the firms his people work at, `firms` are
+      // the client records with an address of their own.
+      for (const firm of [...(pl.companies || []), ...(pl.firms || [])]) {
+        const k = coKey(firm.name || firm);
+        if (!k) continue;
+        const hit = k === want || k.startsWith(want) || want.startsWith(k) ||
+                    parentKey(firm.name || firm) === want;
+        if (!hit) continue;
+        // The office with the most people at it is the one to mean.
+        const weight = (firm.people && firm.people.length) || firm.count || 1;
+        if (!best || weight > best.weight) {
+          best = { weight, place: pl, firm: firm.name || String(firm) };
+        }
+      }
+    }
+    if (!best) return { ok: false, reason: 'no office on file', place: null };
+    return {
+      ok: true, firm: best.firm,
+      place: { lat: best.place.lat, lon: best.place.lon, city: best.place.city || '',
+               state: best.place.state || '', precision: 'company' }
+    };
+  }
+
   if (pathname === '/api/nearby') {
     const { list, unplaced } = await buildPlaces();
     const lat = Number(query.lat), lon = Number(query.lon);
