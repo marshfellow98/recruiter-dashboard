@@ -21,7 +21,7 @@
     content: ''; position: fixed; inset: -10%; z-index: 0; pointer-events: none;
     background:
       radial-gradient(circle at 15% 20%, rgba(225,161,63,0.10) 0%, transparent 32%),
-      radial-gradient(circle at 85% 15%, rgba(232,128,90,0.08) 0%, transparent 30%),
+      radial-gradient(circle at 85% 15%, rgba(var(--cool-rgb),0.08) 0%, transparent 30%),
       radial-gradient(circle at 75% 85%, rgba(225,161,63,0.07) 0%, transparent 34%),
       radial-gradient(circle at 20% 80%, rgba(255,143,80,0.05) 0%, transparent 30%);
     filter: blur(60px);
@@ -45,7 +45,7 @@
   .shell-fade-in { animation: shellFadeIn 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
   @keyframes shellFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
-  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 2rem; padding-bottom: 1.25rem; border-bottom: 1px solid #1c1812; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 2rem; padding-bottom: 1.25rem; border-bottom: 1px solid #191c20; }
   @media (max-width: 1500px) { .topbar { flex-wrap: wrap; row-gap: 14px; } }
   .topbar-left-group { display: flex; align-items: center; gap: 28px; }
   .brand { position: relative; display: flex; align-items: baseline; gap: 14px; padding-bottom: 8px; }
@@ -63,7 +63,7 @@
   .topbar-date { font-size: 21px; font-weight: 700; color: #e8e8e8; margin-top: 6px; letter-spacing: 0.01em; white-space: nowrap; }
   .stats-row { display: flex; gap: 32px; align-items: center; }
 
-  .next-up { text-align: left; padding: 6px 18px; border-left: 1px solid #211c15; border-right: 1px solid #211c15; }
+  .next-up { text-align: left; padding: 6px 18px; border-left: 1px solid #1d2025; border-right: 1px solid #1d2025; }
   .next-up-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #555; margin-bottom: 3px; }
   .next-up-name { font-size: 16px; font-weight: 700; color: var(--t1); line-height: 1.2; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .next-up-countdown { font-family: var(--mono); font-size: 13px; font-weight: 600; color: #e1a13f; margin-top: 2px; }
@@ -74,7 +74,7 @@
   /* Weather chip — top of header, visually shifts personality based on live conditions */
   .weather-chip {
     display: flex; align-items: center; gap: 18px; padding: 14px 24px 14px 14px;
-    border-radius: var(--r-md); background: #0e0c09; border: 1px solid #211c15;
+    border-radius: var(--r-md); background: #0d0e10; border: 1px solid #1d2025;
     transition: all 0.6s ease;
   }
   .weather-chip-icon { width: 80px; height: 80px; flex-shrink: 0; }
@@ -84,27 +84,27 @@
   .weather-chip-sub { font-size: 12px; color: #555; margin-top: 3px; }
 
   /* Clear / sunny */
-  .weather-chip.wx-clear { background: linear-gradient(135deg, rgba(255,180,60,0.14), #0e0c09 65%); border-color: rgba(255,180,60,0.35); }
+  .weather-chip.wx-clear { background: linear-gradient(135deg, rgba(255,180,60,0.14), #0d0e10 65%); border-color: rgba(255,180,60,0.35); }
   .weather-chip.wx-clear .weather-chip-icon { animation: wxSunPulse 3s ease-in-out infinite; }
   @keyframes wxSunPulse { 0%,100%{ filter: drop-shadow(0 0 4px rgba(255,200,80,0.5)); } 50%{ filter: drop-shadow(0 0 12px rgba(255,200,80,0.9)); } }
 
   /* Cloudy */
-  .weather-chip.wx-cloudy { background: linear-gradient(135deg, rgba(150,165,190,0.12), #0e0c09 65%); border-color: rgba(150,165,190,0.3); }
+  .weather-chip.wx-cloudy { background: linear-gradient(135deg, rgba(150,165,190,0.12), #0d0e10 65%); border-color: rgba(150,165,190,0.3); }
   .weather-chip.wx-cloudy .weather-chip-icon { animation: wxDrift 5s ease-in-out infinite; }
   @keyframes wxDrift { 0%,100%{ transform: translateX(0); } 50%{ transform: translateX(3px); } }
 
   /* Rain */
-  .weather-chip.wx-rain { background: linear-gradient(135deg, rgba(60,130,255,0.16), #0e0c09 65%); border-color: rgba(60,130,255,0.35); }
+  .weather-chip.wx-rain { background: linear-gradient(135deg, rgba(60,130,255,0.16), #0d0e10 65%); border-color: rgba(60,130,255,0.35); }
   .weather-chip.wx-rain .weather-chip-icon { animation: wxBounce 1.4s ease-in-out infinite; }
   @keyframes wxBounce { 0%,100%{ transform: translateY(0); } 50%{ transform: translateY(3px); } }
 
   /* Snow */
-  .weather-chip.wx-snow { background: linear-gradient(135deg, rgba(201,210,222,0.16), #0e0c09 65%); border-color: rgba(201,210,222,0.35); }
+  .weather-chip.wx-snow { background: linear-gradient(135deg, rgba(201,210,222,0.16), #0d0e10 65%); border-color: rgba(201,210,222,0.35); }
   .weather-chip.wx-snow .weather-chip-icon { animation: wxShovel 2s ease-in-out infinite; }
   @keyframes wxShovel { 0%,100%{ transform: rotate(0deg); } 50%{ transform: rotate(-6deg); } }
 
   /* Storm — matches the severity language used elsewhere in the dashboard */
-  .weather-chip.wx-storm { background: linear-gradient(135deg, rgba(255,69,58,0.18), #0e0c09 65%); border-color: rgba(255,69,58,0.5); animation: wxStormPulse 1.8s ease-in-out infinite; }
+  .weather-chip.wx-storm { background: linear-gradient(135deg, rgba(255,69,58,0.18), #0d0e10 65%); border-color: rgba(255,69,58,0.5); animation: wxStormPulse 1.8s ease-in-out infinite; }
   .weather-chip.wx-storm .weather-chip-icon { animation: wxFlash 2.2s ease-in-out infinite; }
   @keyframes wxStormPulse { 0%,100%{ border-color: rgba(255,69,58,0.5); } 50%{ border-color: rgba(255,69,58,0.85); } }
   @keyframes wxFlash { 0%,88%,100%{ opacity: 1; } 90%{ opacity: 0.3; } 92%{ opacity: 1; } }
@@ -194,7 +194,7 @@
     text-transform: uppercase; vertical-align: middle;
   }
   .search-kind.contact {
-    background: rgba(232,128,90,0.14); border-color: rgba(232,128,90,0.4); color: #f0a583;
+    background: rgba(var(--cool-rgb),0.14); border-color: rgba(var(--cool-rgb),0.4); color: var(--cool-hi);
   }
   .sheet-main { display: grid; grid-template-columns: 268px minmax(0, 1fr); gap: 30px; align-items: start; }
   .sheet-rail {
@@ -335,7 +335,7 @@
   /* Day toggle */
   /* ── Adding someone to RecruiterFlow ──────────────────────────────────── */
   .contact-btn.add-rf {
-    color: #120d06; background: var(--accent); border-color: transparent; font-weight: 700;
+    color: #0f1114; background: var(--accent); border-color: transparent; font-weight: 700;
   }
   .add-person {
     position: fixed; z-index: 310; left: 50%; top: 50%;
@@ -380,12 +380,12 @@
   .addp-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
   .addp-go {
     font-family: var(--ui); font-size: 14px; font-weight: 700;
-    color: #120d06; background: var(--accent); border: none; border-radius: var(--r-sm);
+    color: #0f1114; background: var(--accent); border: none; border-radius: var(--r-sm);
     padding: 12px 18px; cursor: pointer;
   }
   .addp-go.alt {
-    color: var(--t1); background: rgba(232,128,90,0.22);
-    border: 1px solid rgba(232,128,90,0.5);
+    color: var(--t1); background: rgba(var(--cool-rgb),0.22);
+    border: 1px solid rgba(var(--cool-rgb),0.5);
   }
   .addp-cancel {
     font-family: var(--ui); font-size: 13px; color: var(--t4);
@@ -407,7 +407,7 @@
   }
   .tool-btn:hover { color: var(--t1); border-color: rgba(255,255,255,0.3); }
   .tool-btn sup { font-size: 9px; }
-  .tool-btn.speak.on { color: #120d06; background: var(--accent); border-color: transparent; }
+  .tool-btn.speak.on { color: #0f1114; background: var(--accent); border-color: transparent; }
 
   /* ── "Read my day" ─────────────────────────────────────────────────────── */
   .speak-overlay {
@@ -455,7 +455,7 @@
     padding: 9px 14px; cursor: pointer;
   }
   .speak-speed:hover { color: var(--t1); }
-  .speak-speed.on { color: #120d06; background: var(--accent); border-color: transparent; }
+  .speak-speed.on { color: #0f1114; background: var(--accent); border-color: transparent; }
   .speak-ctl.try { padding: 9px 16px; font-size: 13px; }
   @media (max-width: 760px) {
     #speak-canvas { width: 262px; height: 262px; }
@@ -465,7 +465,7 @@
   /* ── The week strip ───────────────────────────────────────────────────── */
   .day-strip {
     display: flex; gap: 6px; margin-bottom: 16px; width: fit-content; max-width: 100%;
-    background: #100e0a; border-radius: var(--r-md); padding: 5px; overflow-x: auto;
+    background: #101215; border-radius: var(--r-md); padding: 5px; overflow-x: auto;
   }
   .day-chip {
     display: flex; flex-direction: column; align-items: center; gap: 1px;
@@ -486,15 +486,15 @@
   .day-chip.today .day-chip-dow { color: var(--accent); opacity: 1; }
   .day-chip.on {
     background: linear-gradient(135deg, #dfe6ee, #c9d2de 40%, #8b98ab);
-    color: #1b1408; box-shadow: 0 2px 12px rgba(201,210,222,0.25);
+    color: #101316; box-shadow: 0 2px 12px rgba(201,210,222,0.25);
   }
   .day-chip.on .day-chip-dow,
-  .day-chip.on .day-chip-count { opacity: 0.72; color: #1b1408; }
-  .day-toggle { display: flex; background: #100e0a; border-radius: var(--r-md); padding: 4px; gap: 3px; margin-bottom: 16px; width: fit-content; }
+  .day-chip.on .day-chip-count { opacity: 0.72; color: #101316; }
+  .day-toggle { display: flex; background: #101215; border-radius: var(--r-md); padding: 4px; gap: 3px; margin-bottom: 16px; width: fit-content; }
   .day-btn { padding: 10px 24px; border-radius: var(--r-sm); font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: none; color: #444; font-family: var(--ui); transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); letter-spacing: 0.03em; }
-  .day-btn.active { background: linear-gradient(135deg, #dfe6ee, #c9d2de 40%, #8b98ab); color: #1b1408; box-shadow: 0 2px 12px rgba(201,210,222,0.25); }
+  .day-btn.active { background: linear-gradient(135deg, #dfe6ee, #c9d2de 40%, #8b98ab); color: #101316; box-shadow: 0 2px 12px rgba(201,210,222,0.25); }
   .day-btn.tomorrow.active { background: linear-gradient(135deg, #1a2744, #0e1626); color: #dfe6ee; border: 1px solid #2a3a5c; }
-  .tomorrow-banner { display: none; background: #0b0a08; border: 1px solid #1c1812; border-radius: var(--r-md); padding: 12px 18px; margin-bottom: 16px; font-size: 14px; color: #666; }
+  .tomorrow-banner { display: none; background: #0c0d0f; border: 1px solid #191c20; border-radius: var(--r-md); padding: 12px 18px; margin-bottom: 16px; font-size: 14px; color: #666; }
   .tomorrow-banner.visible { display: block; }
   .tomorrow-banner strong { color: var(--t1); }
 
@@ -511,7 +511,7 @@
   .news-carousel::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 3px; }
   .news-card {
     flex-shrink: 0; width: 278px; scroll-snap-align: start; position: relative; overflow: hidden;
-    background: #0b0a08; border: 1px solid #211c15; border-radius: var(--r-md);
+    background: #0c0d0f; border: 1px solid #1d2025; border-radius: var(--r-md);
     padding: 18px; cursor: pointer; text-decoration: none; display: block;
     transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.1s ease-out;
     will-change: transform;
@@ -558,7 +558,7 @@
     animation: lavaDrift1 11s ease-in-out infinite;
   }
   .lava-blob.b2 {
-    width: 220px; height: 220px; background: rgba(232,128,90,0.55); right: -60px; bottom: -50px;
+    width: 220px; height: 220px; background: rgba(var(--cool-rgb),0.55); right: -60px; bottom: -50px;
     animation: lavaDrift2 13s ease-in-out infinite;
   }
   .lava-blob.b3 {
@@ -584,25 +584,25 @@
     75% { transform: translate(-40px, 160px) scale(1.3); border-radius: 50% 50% 60% 40%; }
   }
   .main-card { position: relative; z-index: 1; background: rgba(8,8,10,0.88); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.06); border-radius: var(--r-lg); padding: 2rem; box-shadow: inset 0 1px 0 rgba(255,255,255,0.05); transition: box-shadow 0.4s ease; }
-  .main-card.tomorrow-mode { border-color: #211c15; }
+  .main-card.tomorrow-mode { border-color: #1d2025; }
   .cand-name { font-size: 52px; font-weight: 700; color: var(--t1); line-height: 1; letter-spacing: -0.02em; margin-bottom: 8px; }
   .cand-title { font-size: 17px; color: #555; margin-bottom: 16px; }
   .cand-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 2rem; }
   .tag { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 5px 14px; border-radius: var(--r-lg); }
   .tag-now { background: #e1a13f; color: #000; }
-  .tag-tomorrow { background: #1c1812; color: #888; border: 1px solid #333; }
-  .tag-gray { background: #1c1812; color: #666; border: 1px solid #222; }
+  .tag-tomorrow { background: #191c20; color: #888; border: 1px solid #333; }
+  .tag-gray { background: #191c20; color: #666; border: 1px solid #222; }
 
   .contact-row { display: flex; gap: 10px; margin-bottom: 2rem; flex-wrap: wrap; }
-  .contact-btn { position: relative; overflow: hidden; display: flex; align-items: center; gap: 8px; padding: 14px 20px; border-radius: var(--r-md); font-size: 14px; font-weight: 500; color: var(--t1); background: #16120d; border: 1px solid #252525; cursor: pointer; text-decoration: none; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); font-family: var(--ui); }
+  .contact-btn { position: relative; overflow: hidden; display: flex; align-items: center; gap: 8px; padding: 14px 20px; border-radius: var(--r-md); font-size: 14px; font-weight: 500; color: var(--t1); background: #141619; border: 1px solid #252525; cursor: pointer; text-decoration: none; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); font-family: var(--ui); }
   .contact-btn::before {
     content: ''; position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
     background: linear-gradient(115deg, transparent, rgba(255,255,255,0.12), transparent);
     transform: skewX(-20deg); transition: left 0.6s ease;
   }
   .contact-btn:hover::before { left: 130%; }
-  .contact-btn:hover { transform: translateY(-2px) scale(1.02); background: #211c15; border-color: #333; }
-  .contact-btn.primary { background: var(--accent); color: #1b1408; border-color: var(--accent); font-weight: 600; }
+  .contact-btn:hover { transform: translateY(-2px) scale(1.02); background: #1d2025; border-color: #333; }
+  .contact-btn.primary { background: var(--accent); color: #101316; border-color: var(--accent); font-weight: 600; }
   .contact-btn.primary:hover { background: #e8e8e8; }
 
   .info-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 2rem; }
@@ -610,21 +610,21 @@
   .info-label { font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #444; margin-bottom: 6px; }
   .info-val { font-size: 16px; font-weight: 500; color: var(--t1); }
 
-  .tabs { display: flex; background: #100e0a; border-radius: var(--r-sm); padding: 4px; gap: 3px; margin-bottom: 16px; }
+  .tabs { display: flex; background: #101215; border-radius: var(--r-sm); padding: 4px; gap: 3px; margin-bottom: 16px; }
   .tab { flex: 1; text-align: center; font-size: 13px; font-weight: 500; padding: 9px; border-radius: var(--r-sm); cursor: pointer; color: #444; border: none; background: none; font-family: var(--ui); transition: all 0.15s; }
-  .tab.active { background: #211c15; color: var(--t1); }
+  .tab.active { background: #1d2025; color: var(--t1); }
   .tab-content { display: none; }
   .tab-content.active { display: block; }
 
-  .notes-text { font-size: 16px; color: #aaa; line-height: 1.75; padding: 16px; background: #0e0c09; border-radius: var(--r-md); border-left: 3px solid #e1a13f; }
+  .notes-text { font-size: 16px; color: #aaa; line-height: 1.75; padding: 16px; background: #0d0e10; border-radius: var(--r-md); border-left: 3px solid #e1a13f; }
   .empty-state { font-size: 14px; color: #333; padding: 20px; text-align: center; font-style: italic; }
 
-  .email-item { padding: 14px 16px; background: #0e0c09; border-radius: var(--r-md); margin-bottom: 8px; border: 1px solid #1c1812; }
+  .email-item { padding: 14px 16px; background: #0d0e10; border-radius: var(--r-md); margin-bottom: 8px; border: 1px solid #191c20; }
   .email-from { font-size: 12px; color: #555; margin-bottom: 4px; display: flex; justify-content: space-between; }
   .email-subj { font-size: 15px; font-weight: 500; color: var(--t1); }
   .email-preview { font-size: 13px; color: #444; margin-top: 5px; line-height: 1.5; }
 
-  .call-item { display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: #0e0c09; border-radius: var(--r-md); margin-bottom: 8px; border: 1px solid #1c1812; }
+  .call-item { display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: #0d0e10; border-radius: var(--r-md); margin-bottom: 8px; border: 1px solid #191c20; }
   .call-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
   .dot-in { background: #e1a13f; }
   .dot-out { background: #0a84ff; }
@@ -636,24 +636,24 @@
   .right-col { display: flex; flex-direction: column; gap: 14px; }
   .ai-card {
     position: relative; background: rgba(12,10,16,0.8); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(232,128,90,0.25); border-radius: var(--r-lg); padding: 1.5rem;
-    box-shadow: 0 0 50px rgba(232,128,90,0.10), inset 0 1px 0 rgba(255,255,255,0.04);
+    border: 1px solid rgba(var(--cool-rgb),0.25); border-radius: var(--r-lg); padding: 1.5rem;
+    box-shadow: 0 0 50px rgba(var(--cool-rgb),0.10), inset 0 1px 0 rgba(255,255,255,0.04);
     animation: aiGlow 4s ease-in-out infinite;
   }
   @keyframes aiGlow {
-    0%,100% { box-shadow: 0 0 50px rgba(232,128,90,0.10), inset 0 1px 0 rgba(255,255,255,0.04); }
-    50% { box-shadow: 0 0 70px rgba(232,128,90,0.18), inset 0 1px 0 rgba(255,255,255,0.04); }
+    0%,100% { box-shadow: 0 0 50px rgba(var(--cool-rgb),0.10), inset 0 1px 0 rgba(255,255,255,0.04); }
+    50% { box-shadow: 0 0 70px rgba(var(--cool-rgb),0.18), inset 0 1px 0 rgba(255,255,255,0.04); }
   }
-  .pipe-card { background: rgba(10,10,10,0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid #1c1812; border-radius: var(--r-lg); padding: 1.5rem; }
+  .pipe-card { background: rgba(10,10,10,0.75); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid #191c20; border-radius: var(--r-lg); padding: 1.5rem; }
   .panel-title { font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #666; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
-  .panel-title::after { content:''; flex:1; height:1px; background:#1c1812; }
+  .panel-title::after { content:''; flex:1; height:1px; background:#191c20; }
   #prep-title {
-    background: linear-gradient(90deg, #e8805a, #e1a13f);
+    background: linear-gradient(90deg, var(--cool), #e1a13f);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
     font-size: 13px; font-weight: 700;
   }
 
-  .tip { margin-bottom: 20px; padding-bottom: 20px; padding-left: 14px; border-left: 2px solid rgba(232,128,90,0.4); border-bottom: 1px solid #111; }
+  .tip { margin-bottom: 20px; padding-bottom: 20px; padding-left: 14px; border-left: 2px solid rgba(var(--cool-rgb),0.4); border-bottom: 1px solid #111; }
   .tip:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
   .tip-head { font-size: 16px; font-weight: 600; color: var(--t1); margin-bottom: 6px; }
   .tip-body { font-size: 14px; color: #888; line-height: 1.65; }
@@ -662,7 +662,7 @@
   .pipe-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #111; }
   .pipe-row:last-child { border-bottom: none; }
   .pipe-stage { font-size: 14px; color: #888; width: 84px; }
-  .pipe-track { flex: 1; height: 3px; background: #1c1812; border-radius: 2px; }
+  .pipe-track { flex: 1; height: 3px; background: #191c20; border-radius: 2px; }
   .pipe-fill { height: 3px; background: var(--accent); border-radius: 2px; transition: width 0.6s ease; }
   .pipe-count { font-size: 24px; font-weight: 400; color: var(--t1); width: 28px; text-align: right; }
 
@@ -680,12 +680,12 @@
   .weather-alert-title { font-size: 12px; font-weight: 700; color: #ff8078; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 4px; }
   .weather-alert-text { font-size: 12px; color: #d9a8a5; line-height: 1.5; }
 
-  .deeper-btn { width: 100%; margin-top: 14px; padding: 13px; border-radius: var(--r-sm); font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; background: #16120d; border: 1px solid #333; color: #888; font-family: var(--ui); transition: all 0.2s; }
-  .deeper-btn:hover { background: #211c15; color: var(--t1); border-color: #555; }
+  .deeper-btn { width: 100%; margin-top: 14px; padding: 13px; border-radius: var(--r-sm); font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; background: #141619; border: 1px solid #333; color: #888; font-family: var(--ui); transition: all 0.2s; }
+  .deeper-btn:hover { background: #1d2025; color: var(--t1); border-color: #555; }
 
   .modal-wrap { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 100; align-items: center; justify-content: center; }
   .modal-wrap.open { display: flex; }
-  .modal { background: #0b0a08; border: 1px solid #1c1812; border-top: 2px solid #e1a13f; border-radius: var(--r-lg); padding: 2rem; width: 560px; max-width: 92vw; max-height: 80vh; overflow-y: auto; }
+  .modal { background: #0c0d0f; border: 1px solid #191c20; border-top: 2px solid #e1a13f; border-radius: var(--r-lg); padding: 2rem; width: 560px; max-width: 92vw; max-height: 80vh; overflow-y: auto; }
   .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
   .modal-title { font-size: 24px; font-weight: 700; color: var(--t1); }
   .modal-close { background: none; border: none; color: #444; font-size: 22px; cursor: pointer; }
@@ -784,18 +784,18 @@
        Warm near-black rather than blue-black: the old family fought the gold
        in the wordmark and made it look dirty. The hairlines are warm too —
        white-alpha borders over a warm ground read as a blue haze. */
-    --bg: #0b0a08;
-    --panel: rgba(32,26,20,0.52);
-    --panel-solid: #15120e;
-    --raised: rgba(44,36,27,0.62);
-    --hair: rgba(255,232,198,0.11);
-    --hair-strong: rgba(255,232,198,0.20);
+    --bg: #0c0d0f;
+    --panel: rgba(28,31,35,0.55);
+    --panel-solid: #15171a;
+    --raised: rgba(40,44,50,0.62);
+    --hair: rgba(226,236,245,0.11);
+    --hair-strong: rgba(226,236,245,0.20);
 
-    /* Text ramp — warm, and nothing dimmer than --t4. */
-    --t1: #f8f3ea;
-    --t2: #cfc5b4;
-    --t3: #b0a697;
-    --t4: #8f8679;
+    /* Text ramp — a whisper of warmth, no more, and nothing dimmer than t4. */
+    --t1: #f4f6f8;
+    --t2: #c6cbd1;
+    --t3: #a6acb4;
+    --t4: #868d96;
 
     /* ── Colour ────────────────────────────────────────────────────────────
        The accent is the gold out of the logo, and it is the only accent. The
@@ -806,29 +806,40 @@
     --accent: #e1a13f;
     --accent-hi: #f7c878;
     --accent-dim: rgba(225,161,63,0.16);
-    --live: #ff9148;
+
+    /* ── The second colour ─────────────────────────────────────────────────
+       Gold with an ember beside it was two warms, and two warms on a warm
+       ground cook down to bronze — everything the same temperature, nothing
+       separating. The counterpoint is cool, which is also what makes the gold
+       read as gold: put a teal next to amber and the amber gets brighter
+       without changing a value. One hex here moves it. */
+    --cool: #74c0cf;
+    --cool-hi: #a3dbe6;
+    --cool-dim: rgba(116,192,207,0.15);
+    --cool-rgb: 116,192,207;
+
+    --live: var(--cool);
     --alert: #e8574a;
 
-    /* Categories as a warm family, separated by temperature rather than by
-       four unrelated hues. */
+    /* Four readings: the brand for a candidate, the counterpoint for a
+       contact, and two neutrals for colleagues and his own time. */
     --c-candidate: #e1a13f;
-    --c-contact: #e8805a;
-    --c-team: #a9a194;
-    --c-personal: #6e6a63;
+    --c-contact: var(--cool);
+    --c-team: #9aa0a6;
+    --c-personal: #656a70;
 
-    /* Kept because older rules still name them; both now point at the brand
-       rather than at the template's palette. */
-    --violet: #e8805a;
-    --silver: #cfc5b4;
+    /* Kept because older rules still name them. */
+    --violet: var(--cool);
+    --silver: #c8ccd2;
 
     /* ── Ambient ───────────────────────────────────────────────────────────
        The colour radiating behind the glass stays — it is the part he likes —
        but in the firm's own colours, and it answers to the day now rather
        than only to the clock: see setAmbientForTime() and ambientHeat(). */
     --amb-1: rgba(225,161,63,0.14);
-    --amb-2: rgba(232,128,90,0.11);
+    --amb-2: rgba(var(--cool-rgb),0.11);
     --amb-3: rgba(225,161,63,0.09);
-    --amb-4: rgba(255,145,72,0.07);
+    --amb-4: rgba(var(--cool-rgb),0.07);
     --amb-gain: 1;
   }
 
@@ -955,7 +966,7 @@
   .ai-card::after {
     content: ''; position: absolute; inset: 0; border-radius: inherit; z-index: 0;
     pointer-events: none;
-    background: radial-gradient(120% 80% at 50% 0%, rgba(232,128,90,0.14), transparent 62%);
+    background: radial-gradient(120% 80% at 50% 0%, rgba(var(--cool-rgb),0.14), transparent 62%);
   }
   .ai-card > * { position: relative; z-index: 1; }
 
@@ -1109,7 +1120,7 @@
     color: var(--t1); background: rgba(255,255,255,0.1);
   }
   .geomap-range.on {
-    color: #120d06; background: var(--accent); border-color: transparent;
+    color: #0f1114; background: var(--accent); border-color: transparent;
   }
   .geomap-today { margin-left: 6px; color: var(--t2); }
   .geomap-detail {
@@ -1144,7 +1155,7 @@
   .geomap-firm-alias { font-size: 11px; color: var(--t4); margin-top: 2px; }
   .geomap-firm-jobs {
     margin-left: 8px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
-    text-transform: uppercase; color: #120d06; background: var(--accent);
+    text-transform: uppercase; color: #0f1114; background: var(--accent);
     padding: 2px 7px; border-radius: 999px; vertical-align: middle;
   }
   .geomap-person {
@@ -1169,7 +1180,7 @@
     transition: all 0.15s ease;
   }
   .geomap-act:hover { color: var(--t1); background: rgba(255,255,255,0.13); }
-  .geomap-act.call:hover { color: #120d06; background: var(--accent); border-color: transparent; }
+  .geomap-act.call:hover { color: #0f1114; background: var(--accent); border-color: transparent; }
   .geomap-call-ask {
     flex: 1 1 100%; display: flex; flex-direction: column; gap: 5px;
     margin: 6px 0 2px; padding: 9px 10px; border-radius: var(--r-md);
@@ -1180,7 +1191,7 @@
   .geomap-call-num {
     display: flex; flex-direction: column; gap: 1px; align-items: flex-start;
     font: inherit; text-align: left;
-    color: #120d06; background: var(--accent); border: none; border-radius: var(--r-sm);
+    color: #0f1114; background: var(--accent); border: none; border-radius: var(--r-sm);
     padding: 8px 11px; cursor: pointer;
   }
   .geomap-call-digits { font-size: 14px; font-weight: 700; letter-spacing: 0.01em; }
@@ -1257,14 +1268,14 @@
   .search-row-name { display: block; font-size: 16px; font-weight: 600; color: var(--t1); }
   .search-row-sub  { display: block; font-size: 13px; color: var(--t3); margin-top: 3px; }
   .search-row-where{ display: block; font-size: 12px; color: var(--t4); margin-top: 2px; }
-  .tag-viewing { background: rgba(232,128,90,0.22); color: #d9ccff; border: 1px solid rgba(232,128,90,0.45); }
-  .main-card.viewing-mode { border-color: transparent; box-shadow: var(--e2), 0 0 0 1px rgba(232,128,90,0.28); }
+  .tag-viewing { background: rgba(var(--cool-rgb),0.22); color: #d9ccff; border: 1px solid rgba(var(--cool-rgb),0.45); }
+  .main-card.viewing-mode { border-color: transparent; box-shadow: var(--e2), 0 0 0 1px rgba(var(--cool-rgb),0.28); }
 
   /* The card announcing itself after a search pick — see revealMainCard(). */
   @keyframes cardArrive {
-    0%   { box-shadow: 0 0 0 0 rgba(232,128,90,0.00); }
-    22%  { box-shadow: 0 0 0 3px rgba(232,128,90,0.85), 0 0 40px 8px rgba(232,128,90,0.30); }
-    100% { box-shadow: 0 0 0 0 rgba(232,128,90,0.00); }
+    0%   { box-shadow: 0 0 0 0 rgba(var(--cool-rgb),0.00); }
+    22%  { box-shadow: 0 0 0 3px rgba(var(--cool-rgb),0.85), 0 0 40px 8px rgba(var(--cool-rgb),0.30); }
+    100% { box-shadow: 0 0 0 0 rgba(var(--cool-rgb),0.00); }
   }
   .main-card-wrap.card-arrive { animation: cardArrive 1.5s ease-out; }
   @media (prefers-reduced-motion: reduce) {
@@ -1302,7 +1313,7 @@
   }
   .zoom-recap-badge {
     font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
-    color: #f0a583; background: rgba(232,128,90,0.16);
+    color: var(--cool-hi); background: rgba(var(--cool-rgb),0.16);
     border: 1px solid rgba(60,130,255,0.42); border-radius: var(--r-sm); padding: 4px 9px;
   }
   .zoom-recap-when { font-size: 12.5px; font-weight: 600; color: var(--t3); }
@@ -1321,25 +1332,25 @@
   .zoom-recap-none { font-size: 13.5px; color: var(--t4); padding: 4px 0; }
   .zoom-recap-more { margin-top: 14px; }
   .zoom-recap-more > summary {
-    cursor: pointer; font-size: 13.5px; font-weight: 600; color: #f0a583;
+    cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--cool-hi);
     padding: 9px 2px; min-height: 40px; display: flex; align-items: center;
   }
   .zoom-recap-more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
   .zoom-recap-body > div + div { margin-top: 10px; }
-  .zoom-recap-link { color: #f0a583; text-decoration: none; letter-spacing: 0.06em; }
+  .zoom-recap-link { color: var(--cool-hi); text-decoration: none; letter-spacing: 0.06em; }
   .zoom-recap-link:hover { text-decoration: underline; }
   .notes-editor { display: none; }
   .notes-editor.open { display: block; }
   .notes-input {
     width: 100%; resize: vertical; min-height: 130px;
     font-family: var(--ui); font-size: 16px; line-height: 1.7; color: var(--t1);
-    background: rgba(8,9,12,0.9); border: 1px solid rgba(232,128,90,0.4);
+    background: rgba(8,9,12,0.9); border: 1px solid rgba(var(--cool-rgb),0.4);
     border-radius: var(--r-md); padding: 16px;
     transition: border-color 0.25s var(--settle), box-shadow 0.25s var(--settle);
   }
   .notes-input:focus {
-    outline: none; border-color: rgba(232,128,90,0.75);
-    box-shadow: 0 0 0 4px rgba(232,128,90,0.14);
+    outline: none; border-color: rgba(var(--cool-rgb),0.75);
+    box-shadow: 0 0 0 4px rgba(var(--cool-rgb),0.14);
   }
   .notes-input::placeholder { color: var(--t4); }
   .notes-actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
@@ -1575,6 +1586,33 @@
     font-family: var(--ui); transition: border-color .2s var(--settle), color .2s var(--settle);
   }
   .refresh-btn:hover { border-color: var(--hair-strong); color: var(--t1); }
+
+  /* ══ THE TWO-COLOUR SYSTEM ════════════════════════════════════════════════
+     Gold is the brand: it marks what he has selected and what he should press.
+     The counterpoint carries everything that is a fact rather than a choice —
+     the people on the other side of a meeting, the links out, the moment the
+     clock has reached. Two colours doing two jobs is what makes a screen look
+     decided; gold alone was handsome and monotonous, and gold with an ember
+     beside it was bronze. */
+  .notes-src, .zoom-recap-link, .geomap-firm-open, .search-count,
+  .sheet-nav.part .sheet-nav-count, .wx-hilo {
+    color: var(--cool);
+  }
+  /* "Now" belongs to the clock, not to him, so it is the counterpoint. */
+  .now-dot { background: var(--cool); box-shadow: 0 0 0 3px rgba(var(--cool-rgb),0.22); }
+  .next-up-countdown { color: var(--cool); }
+  .next-up-countdown.soon { color: var(--accent-hi); }
+  .next-up-countdown.now { color: var(--alert); }
+  .tag-viewing { color: var(--cool); border-color: rgba(var(--cool-rgb),0.45);
+                 background: rgba(var(--cool-rgb),0.13); }
+  .day-chip-count { color: var(--cool); }
+  .day-chip.on .day-chip-count { color: inherit; }
+  .pulse-dot { background: var(--cool); }
+  .sched-item:hover { border-color: rgba(var(--cool-rgb),0.45); }
+  .contact-btn:hover { border-color: rgba(var(--cool-rgb),0.5); color: var(--cool-hi); }
+  .sheet-input:focus { border-color: rgba(var(--cool-rgb),0.7);
+                       background: rgba(var(--cool-rgb),0.07);
+                       box-shadow: 0 0 0 3px rgba(var(--cool-rgb),0.14); }
 </style>
 </head>
 <body class="shell-fade-in">
@@ -2195,17 +2233,17 @@ const DOG_CALM = `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
   <ellipse cx="100" cy="118" rx="27" ry="19" fill="#f2f5f8"/>
   <path d="M74 112 q6 -6 12 0 q-4 8 -12 0 Z" fill="#ab6c38"/>
   <path d="M126 112 q-6 -6 -12 0 q4 8 12 0 Z" fill="#ab6c38"/>
-  <ellipse cx="100" cy="108" rx="9" ry="6.5" fill="#1f1a14"/>
-  <path d="M100 114 v6" stroke="#1f1a14" stroke-width="2.4" stroke-linecap="round"/>
-  <path d="M100 120 q-9 8 -16 1" stroke="#1f1a14" stroke-width="2.6" fill="none" stroke-linecap="round"/>
-  <path d="M100 120 q9 8 16 1" stroke="#1f1a14" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+  <ellipse cx="100" cy="108" rx="9" ry="6.5" fill="#1b1e22"/>
+  <path d="M100 114 v6" stroke="#1b1e22" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M100 120 q-9 8 -16 1" stroke="#1b1e22" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+  <path d="M100 120 q9 8 16 1" stroke="#1b1e22" stroke-width="2.6" fill="none" stroke-linecap="round"/>
 
-  <ellipse cx="82" cy="90" rx="8" ry="8.5" fill="#1f1a14"/>
-  <ellipse cx="118" cy="90" rx="8" ry="8.5" fill="#1f1a14"/>
+  <ellipse cx="82" cy="90" rx="8" ry="8.5" fill="#1b1e22"/>
+  <ellipse cx="118" cy="90" rx="8" ry="8.5" fill="#1b1e22"/>
   <circle cx="82" cy="90" r="5.4" fill="#b07a3e"/>
   <circle cx="118" cy="90" r="5.4" fill="#b07a3e"/>
-  <circle cx="82" cy="90" r="2.8" fill="#13100b"/>
-  <circle cx="118" cy="90" r="2.8" fill="#13100b"/>
+  <circle cx="82" cy="90" r="2.8" fill="#121417"/>
+  <circle cx="118" cy="90" r="2.8" fill="#121417"/>
   <circle cx="84.2" cy="87.4" r="1.7" fill="#fff"/>
   <circle cx="120.2" cy="87.4" r="1.7" fill="#fff"/>
 
@@ -2247,19 +2285,19 @@ const DOG_ALERT = `<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"
   <ellipse cx="100" cy="118" rx="27" ry="19" fill="#f2f5f8"/>
   <path d="M74 112 q6 -6 12 0 q-4 8 -12 0 Z" fill="#ab6c38"/>
   <path d="M126 112 q-6 -6 -12 0 q4 8 12 0 Z" fill="#ab6c38"/>
-  <ellipse cx="100" cy="108" rx="9" ry="6.5" fill="#1f1a14"/>
-  <path d="M100 114 v6" stroke="#1f1a14" stroke-width="2.4" stroke-linecap="round"/>
-  <path d="M100 120 q-10 5 -14 -1" stroke="#1f1a14" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-  <path d="M100 120 q10 5 14 -1" stroke="#1f1a14" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-  <ellipse cx="100" cy="126" rx="10.5" ry="8.5" fill="#1f1a14"/>
+  <ellipse cx="100" cy="108" rx="9" ry="6.5" fill="#1b1e22"/>
+  <path d="M100 114 v6" stroke="#1b1e22" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M100 120 q-10 5 -14 -1" stroke="#1b1e22" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <path d="M100 120 q10 5 14 -1" stroke="#1b1e22" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <ellipse cx="100" cy="126" rx="10.5" ry="8.5" fill="#1b1e22"/>
   <path d="M94 130 q6 11 12 0 q-2 8 -12 0 Z" fill="#e0708a"/>
 
-  <ellipse cx="82" cy="90" rx="9" ry="9.5" fill="#1f1a14"/>
-  <ellipse cx="118" cy="90" rx="9" ry="9.5" fill="#1f1a14"/>
+  <ellipse cx="82" cy="90" rx="9" ry="9.5" fill="#1b1e22"/>
+  <ellipse cx="118" cy="90" rx="9" ry="9.5" fill="#1b1e22"/>
   <circle cx="82" cy="90" r="6.1" fill="#b07a3e"/>
   <circle cx="118" cy="90" r="6.1" fill="#b07a3e"/>
-  <circle cx="82" cy="90" r="2.8" fill="#13100b"/>
-  <circle cx="118" cy="90" r="2.8" fill="#13100b"/>
+  <circle cx="82" cy="90" r="2.8" fill="#121417"/>
+  <circle cx="118" cy="90" r="2.8" fill="#121417"/>
   <circle cx="84.2" cy="87.4" r="1.7" fill="#fff"/>
   <circle cx="120.2" cy="87.4" r="1.7" fill="#fff"/>
 
@@ -3920,8 +3958,8 @@ const WX_FIGURE_CLEAR = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/200
   <path d="M36 38 L66 48" stroke="#e8e0d0" stroke-width="6" fill="none" stroke-linecap="round"/>
   <line x1="66" y1="48" x2="80" y2="62" stroke="#9a8560" stroke-width="5" stroke-linecap="round"/>
   <rect x="68" y="62" width="26" height="16" rx="4" fill="#e1a13f"/>
-  <circle cx="74" cy="82" r="6" fill="#6b4714"/>
-  <circle cx="88" cy="82" r="6" fill="#6b4714"/>
+  <circle cx="74" cy="82" r="6" fill="#2b6f68"/>
+  <circle cx="88" cy="82" r="6" fill="#2b6f68"/>
 </svg>`;
 
 const WX_FIGURE_CLOUDY = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
@@ -4027,7 +4065,7 @@ function wxSkyColors(d) {
   const p = d.progress;
   const night = p < 0 || p > 1;
   if (night) return ['#070b18', '#0d1226', '#141a33'];
-  if (p < 0.12) return ['#241a0d', '#4a3a5c', '#8a5a4a'];   // dawn
+  if (p < 0.12) return ['#161a1e', '#4a3a5c', '#8a5a4a'];   // dawn
   if (p > 0.88) return ['#2a2340', '#6b3a4a', '#b05a35'];   // dusk
   if (d.cat === 'wx-storm')  return ['#1a1f2e', '#252b3d', '#2f3547'];
   if (d.cat === 'wx-rain')   return ['#1e2836', '#2b3a4d', '#3a4a5e'];
@@ -4467,12 +4505,19 @@ function attachTiltEffect() {
    slow on purpose: four seconds of transition, never a flash, and it holds
    still entirely for anyone who has asked for less motion. */
 const AMBIENT = {
-  dawn:  ['rgba(255,145,72,0.10)',  'rgba(232,128,90,0.12)', 'rgba(180,96,60,0.07)',   'rgba(225,161,63,0.06)'],
-  morn:  ['rgba(225,161,63,0.14)',  'rgba(255,170,90,0.12)', 'rgba(232,128,90,0.08)',  'rgba(255,145,72,0.08)'],
-  day:   ['rgba(225,161,63,0.15)',  'rgba(247,200,120,0.10)','rgba(225,161,63,0.11)',  'rgba(232,128,90,0.06)'],
-  eve:   ['rgba(255,145,72,0.13)',  'rgba(232,128,90,0.13)', 'rgba(225,161,63,0.09)',  'rgba(214,113,58,0.08)'],
-  night: ['rgba(214,113,58,0.09)',  'rgba(232,128,90,0.10)', 'rgba(160,96,52,0.07)',   'rgba(225,161,63,0.05)']
+  dawn:  [['gold',0.09], ['cool',0.12], ['warm',0.06], ['cool',0.07]],
+  morn:  [['gold',0.14], ['cool',0.10], ['warm',0.07], ['cool',0.08]],
+  day:   [['gold',0.15], ['cool',0.09], ['gold',0.08], ['cool',0.07]],
+  eve:   [['gold',0.13], ['cool',0.12], ['warm',0.08], ['cool',0.08]],
+  night: [['warm',0.08], ['cool',0.13], ['warm',0.06], ['cool',0.09]]
 };
+
+function ambientColour([which, alpha]) {
+  if (which === 'cool') return coolRGBA(alpha);
+  const g = cssRGB('--accent', [225, 161, 63]);
+  if (which === 'gold') return `rgba(${g[0]},${g[1]},${g[2]},${alpha})`;
+  return `rgba(150,124,86,${alpha})`;      // the dim warm that fills the corners
+}
 
 function ambientBand(h) {
   if (h < 6) return 'dawn';
@@ -4504,7 +4549,7 @@ function setAmbientForTime() {
   const d = new Date();
   const a = AMBIENT[ambientBand(d.getHours() + d.getMinutes() / 60)];
   const s = document.documentElement.style;
-  a.forEach((v, i) => s.setProperty('--amb-' + (i + 1), v));
+  a.forEach((v, i) => s.setProperty('--amb-' + (i + 1), ambientColour(v)));
   s.setProperty('--amb-gain', ambientHeat().toFixed(2));
 }
 
@@ -4565,10 +4610,10 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
    hues: gold for a candidate, warm coral for a contact, a warm grey for
    colleagues and a dim one for his own blocks. */
 function arcColor(cat) {
-  if (cat === 'team')     return [169, 161, 148];
-  if (cat === 'personal') return [110, 106, 99];
-  if (cat === 'contact')  return [232, 128, 90];
-  return [225, 161, 63];
+  if (cat === 'team')     return [154, 160, 166];
+  if (cat === 'personal') return [101, 106, 112];
+  if (cat === 'contact')  return cssRGB('--cool', [116, 192, 207]);
+  return cssRGB('--accent', [225, 161, 63]);
 }
 
 function arcR() { return Math.min(ARC.w * ARC_GEO.RFRAC, ARC_GEO.RMAX); }
@@ -4930,7 +4975,7 @@ function arcDraw(ts) {
   // Ground glow under the arc.
   const glow = ctx.createRadialGradient(w / 2, h * 0.74, 0, w / 2, h * 0.74, Math.max(w * 0.46, 300));
   glow.addColorStop(0,   'rgba(225,161,63,0.12)');
-  glow.addColorStop(0.5, 'rgba(232,128,90,0.055)');
+  glow.addColorStop(0.5, coolRGBA(0.055));
   glow.addColorStop(1,   'rgba(0,0,0,0)');
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, w, h);
@@ -5743,7 +5788,30 @@ function renderVoicePicker() {
    shockwaves, and a warm white the highlight — the same three colours the
    rest of the dashboard now uses, so the one theatrical thing on screen still
    belongs to the same family. */
-const ORB_GOLD = [225, 161, 63], ORB_EMBER = [255, 145, 72], ORB_ICE = [255, 246, 232];
+/* Canvas cannot read a custom property, so the palette is read once from the
+   stylesheet and handed to the drawing code. One hex in :root therefore moves
+   the orb, the arc and the map along with everything else. */
+function cssRGB(name, fallback) {
+  try {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    const hex = v.match(/^#([0-9a-f]{6})$/i);
+    if (hex) return [parseInt(hex[1].slice(0,2),16), parseInt(hex[1].slice(2,4),16), parseInt(hex[1].slice(4,6),16)];
+    const rgb = v.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])];
+  } catch (e) {}
+  return fallback;
+}
+/* The counterpoint, as a colour string canvas can actually parse. Custom
+   properties work in the stylesheet and nowhere else; a gradient stop given
+   "rgba(var(--cool-rgb),0.05)" throws and takes the whole draw with it. */
+function coolRGBA(a) {
+  const c = cssRGB('--cool', [116, 192, 207]);
+  return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+}
+
+const ORB_GOLD = cssRGB('--accent', [225, 161, 63]);
+const ORB_EMBER = cssRGB('--cool', [116, 192, 207]);     // the counterpoint
+const ORB_ICE = [244, 246, 248];
 const ORB_GREEN = ORB_GOLD;        // the old name, still used below
 const orbRGBA = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${Math.max(0, a).toFixed(3)})`;
 
